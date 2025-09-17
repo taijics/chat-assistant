@@ -1,3 +1,16 @@
+/**
+ * Windows 下用 SetWindowPos 把助手窗口放在微信窗口之后
+ * 若发生错误返回 false
+ */
+const os = require('os');
+if (process.platform !== 'win32') {
+  // 非 Windows 导出一个空实现，避免主进程崩溃
+  module.exports = {
+    placeAfterWeChat: () => false
+  };
+  return;
+}
+
 const ffi = require('ffi-napi');
 const ref = require('ref-napi');
 
@@ -28,6 +41,10 @@ function ptrFromHandle(h) {
   return ref.NULL;
 }
 
+/**
+ * @param {Buffer|number} assistHandle Electron窗口 getNativeWindowHandle() Buffer
+ * @param {number} wechatHandle node-window-manager 提供的窗口句柄
+ */
 function placeAfterWeChat(assistHandle, wechatHandle) {
   const aPtr = ptrFromHandle(assistHandle);
   const wPtr = ptrFromHandle(wechatHandle);

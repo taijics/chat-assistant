@@ -6,12 +6,32 @@
  * 3. 仍保留原有：减号最小化到迷你窗口、退出按钮、缓动跟随、首次直接定位、定时器清理等功能。
  */
 
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
-const { windowManager } = require('node-window-manager');
-const { placeAfterWeChat } = require('./win32'); // 新增：Win32 Z 序控制
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  screen
+} = require('electron');
+const {
+  windowManager
+} = require('node-window-manager');
+/**
+ * 主进程（节选差异）：仅调整 win32 引入为安全模式
+ */
 
-let mainWindow;          // 吸附助手窗口
-let miniWindow;          // 迷你图标窗口
+
+// 安全引入 win32 模块
+let placeAfterWeChat = () => false;
+if (process.platform === 'win32') {
+  try {
+    ({ placeAfterWeChat } = require('./win32'));
+  } catch (e) {
+    console.warn('[main] win32 Z 序模块加载失败：', e.message);
+  }
+}
+
+let mainWindow; // 吸附助手窗口
+let miniWindow; // 迷你图标窗口
 
 // 定时器引用
 let positionTimer = null;
@@ -29,13 +49,13 @@ let targetY = 0;
 let targetWidth = 350;
 let targetHeight = 650;
 
-const speed = 0.2;                 // 缓动速度
-let isClosedByUser = false;        // 用户是否通过减号隐藏了主窗口
+const speed = 0.2; // 缓动速度
+let isClosedByUser = false; // 用户是否通过减号隐藏了主窗口
 let firstWeChatPositioned = false; // 首次发现微信后直接定位
 // Z 序同步相关状态
 let lastZOrderWeChatHandle = null;
 let lastZOrderResult = null;
-let lastZSyncAt = 0;               // 上一次同步时间戳（节流）
+let lastZSyncAt = 0; // 上一次同步时间戳（节流）
 
 function lerp(a, b, t) {
   return a + (b - a) * t;
@@ -60,7 +80,9 @@ function createMainWindow() {
 }
 
 function createMiniWindow() {
-  const { width } = screen.getPrimaryDisplay().workAreaSize;
+  const {
+    width
+  } = screen.getPrimaryDisplay().workAreaSize;
   miniWindow = new BrowserWindow({
     width: 160,
     height: 40,
@@ -131,7 +153,7 @@ app.whenReady().then(() => {
           const assistantHandleBuffer = mainWindow.getNativeWindowHandle(); // Buffer
           const weChatHandle = weChatWindow.handle; // 数字句柄
 
-            // 仅在微信句柄变化、上次失败、或需要周期刷新时尝试
+          // 仅在微信句柄变化、上次失败、或需要周期刷新时尝试
           if (weChatHandle) {
             if (weChatHandle !== lastZOrderWeChatHandle || lastZOrderResult === false) {
               lastZOrderWeChatHandle = weChatHandle;
