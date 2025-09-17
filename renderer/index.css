@@ -1,0 +1,42 @@
+body {
+  margin: 0;
+  background: #f6f7fb;
+  font-family: 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif;
+}
+
+#assistant-container {
+  width: 100%;
+  height: 100%;
+  padding: 20px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+  background: #fff;
+  position: relative;
+}
+
+#top-bar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  left: 8px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+#close-btn {
+  width: 28px;
+  height: 28px;
+  font-size: 18px;
+  border: none;
+  background: #eaeaea;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #555;
+  transition: background 0.2s;
+}
+#close-btn:hover {
+  background: #f44336;
+  color: #fff;
+}
