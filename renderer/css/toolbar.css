@@ -1,0 +1,81 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Microsoft YaHei", sans-serif;
+}
+.toolbar {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  background: #ffffff;
+  border-bottom: 1px solid #e7e9ee;
+  -webkit-app-region: drag;
+  position: relative;
+  box-sizing: border-box;
+}
+.toolbar .spacer {
+  flex: 1;
+}
+.toolbar button {
+  -webkit-app-region: no-drag;
+  border: 1px solid #d6d9de;
+  background: #f7f8fa;
+  height: 28px;
+  width: 36px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+  cursor: pointer;
+  padding: 0;
+}
+.toolbar button:hover {
+  background: #eef0f3;
+}
+
+.dropdown {
+  -webkit-app-region: no-drag;
+  position: absolute;
+  right: 8px;
+  top: 40px;                  /* 紧贴按钮下方（工具栏高度40） */
+  min-width: 160px;
+  background: #fff;
+  border: 1px solid #e1e4ea;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  display: none;
+  overflow: hidden;
+  z-index: 999;
+}
+.dropdown.open { display: block; }
+.dropdown ul {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+}
+.dropdown li {
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #222;
+  line-height: 18px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dropdown li:hover {
+  background: #f5f7fa;
+}
+.dropdown li.divider {
+  height: 1px;
+  padding: 0;
+  margin: 6px 0;
+  background: #eee;
+  cursor: default;
+}
+.dropdown li.checked::before {
+  content: "✔";
+  margin-right: 8px;
+  color: #3b82f6;
+}

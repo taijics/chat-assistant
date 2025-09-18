@@ -1,0 +1,51 @@
+/* 话术面板样式（不影响你现有页面其它样式） */
+#quick-phrases {
+  box-sizing: border-box;
+  margin: 8px;
+  padding: 10px 10px 6px;
+  background: #ffffff;
+  border: 1px solid #e7e9ee;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+#quick-phrases .title {
+  font-size: 14px;
+  color: #333;
+  margin: 0 0 8px 0;
+}
+
+#quick-phrases .list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.phrase-item {
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid #e6e8ef;
+  border-radius: 6px;
+  background: #fafbfe;
+  color: #222;
+  font-size: 13px;
+  line-height: 18px;
+  cursor: default;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+  user-select: none;
+}
+
+.phrase-item:hover {
+  background: #f0f4ff;
+  border-color: #c9d6ff;
+}
+
+.phrase-item:active {
+  transform: scale(0.995);
+}
+
+/* 可选：让内容区在顶部工具栏下方留出点空白 */
+body { padding-top: 8px; }

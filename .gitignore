@@ -1,0 +1,53 @@
+# dependencies
+node_modules/
+package-lock.json
+npm-debug.log*
+yarn.lock
+yarn-error.log*
+pnpm-lock.yaml
+.pnpm-debug.log*
+
+# builds / bundles / caches
+dist/
+build/
+out/
+release/
+coverage/
+.cache/
+.tmp/
+tmp/
+.eslintcache
+.stylelintcache
+tsconfig.tsbuildinfo
+
+# Electron packaging outputs
+*.asar
+*.asar.unpacked/
+releases/
+electron-out/
+app/dist/
+
+# frameworks
+.next/
+.nuxt/
+.svelte-kit/
+.vite/
+.storybook/
+
+# env and secrets
+.env
+.env.*
+!.env.example
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# logs
+*.log
+
+# misc
+*.tgznode_modules/

@@ -1,21 +1,10 @@
-/**
- * Windows 下用 SetWindowPos 把助手窗口放在微信窗口之后
- * 若发生错误返回 false
- */
-const os = require('os');
-if (process.platform !== 'win32') {
-  // 非 Windows 导出一个空实现，避免主进程崩溃
-  module.exports = {
-    placeAfterWeChat: () => false
-  };
-  return;
-}
-
 const ffi = require('ffi-napi');
 const ref = require('ref-napi');
 
+// Win32: BOOL SetWindowPos(HWND hWnd, HWND hWndInsertAfter, int X,int Y,int cx,int cy, UINT uFlags);
 const user32 = ffi.Library('user32', {
   SetWindowPos: ['bool', ['pointer', 'pointer', 'int', 'int', 'int', 'int', 'uint']],
+  IsIconic: ['bool', ['pointer']] // 判断是否最小化
 });
 
 const SWP_NOSIZE = 0x0001;
@@ -23,7 +12,6 @@ const SWP_NOMOVE = 0x0002;
 const SWP_NOACTIVATE = 0x0010;
 const SWP_NOOWNERZORDER = 0x0200;
 const SWP_NOSENDCHANGING = 0x0400;
-
 const COMMON_FLAGS = SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING;
 
 function ptrFromHandle(h) {
@@ -42,18 +30,35 @@ function ptrFromHandle(h) {
 }
 
 /**
- * @param {Buffer|number} assistHandle Electron窗口 getNativeWindowHandle() Buffer
- * @param {number} wechatHandle node-window-manager 提供的窗口句柄
+ * 把 assistant 插到 wechat 窗口“上方紧邻”位置。
+ * 注意：hWndInsertAfter = wechatHandle => 结果是 assistant 位于微信之上（高一层），
+ * 如果微信整体被其它窗口遮挡，assistant 同样也被遮挡，不会超越最上层窗口。
  */
-function placeAfterWeChat(assistHandle, wechatHandle) {
-  const aPtr = ptrFromHandle(assistHandle);
-  const wPtr = ptrFromHandle(wechatHandle);
+function placeAboveWeChat(assistantHandleBuf, wechatHandleNumeric) {
+  const aPtr = ptrFromHandle(assistantHandleBuf);
+  const wPtr = ptrFromHandle(wechatHandleNumeric);
   if (aPtr.isNull() || wPtr.isNull()) return false;
   try {
     return user32.SetWindowPos(aPtr, wPtr, 0, 0, 0, 0, COMMON_FLAGS);
-  } catch (e) {
+  } catch {
     return false;
   }
 }
 
-module.exports = { placeAfterWeChat };
+/**
+ * 判断窗口是否最小化
+ */
+function isMinimized(wechatHandleNumeric) {
+  const wPtr = ptrFromHandle(wechatHandleNumeric);
+  if (wPtr.isNull()) return false;
+  try {
+    return user32.IsIconic(wPtr);
+  } catch {
+    return false;
+  }
+}
+
+module.exports = {
+  placeAboveWeChat,
+  isMinimized
+};

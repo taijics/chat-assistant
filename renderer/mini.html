@@ -1,21 +1,21 @@
-<!DOCTYPE html>
-<html lang="zh">
+<!doctype html>
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>Yi Wai Wai</title>
-  <link rel="stylesheet" href="mini.css">
+  <meta charset="utf-8" />
+  <title>Mini</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #2b2f3a; color: #fff; font-family: Arial, sans-serif; }
+    .wrap { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; }
+    .wrap:hover { background: #3a4050; }
+  </style>
 </head>
 <body>
-  <div id="mini-container" title="点击打开助手窗口">
-    <div id="logo">
-      <!-- 磁铁图标SVG -->
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-        <rect x="4" y="8" width="16" height="8" rx="4" stroke="#2a7cf7" stroke-width="2" fill="#eaf3fe"/>
-        <rect x="4" y="8" width="8" height="8" rx="4" fill="#eaf3fe"/>
-      </svg>
-    </div>
-    <div id="text">Yi Wai Wai</div>
-  </div>
-  <script src="mini.js"></script>
+  <div class="wrap" id="wrap">微信助手</div>
+  <script>
+    const { ipcRenderer } = require('electron');
+    document.getElementById('wrap').addEventListener('click', () => {
+      ipcRenderer.send('restore-main-window');
+    });
+  </script>
 </body>
 </html>
