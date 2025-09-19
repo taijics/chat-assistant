@@ -8,7 +8,6 @@
   padding: 0 12px;
   background: #f6f7f9;
   border-bottom: 1px solid #ddd;
-  /* 这个 margin-top 是为避开自定义标题栏，如不需要可去掉或调整 */
   margin-top: 40px;
 }
 
@@ -20,7 +19,7 @@
   color: #333;
   padding: 8px 14px;
   margin: 0;
-  margin-bottom: -1px; /* 让激活态与内容面板无缝连接 */
+  margin-bottom: -1px;
   border-top-left-radius: 8px;
   border-top-right-radius: 8px;
   font-size: 13px;
@@ -28,21 +27,16 @@
   line-height: 1;
   outline: none;
 }
-
-.tabbar .tab-btn:hover {
-  background: #eef5ff;
-}
-
+.tabbar .tab-btn:hover { background: #eef5ff; }
 .tabbar .tab-btn:focus-visible {
   box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.35);
   border-radius: 8px 8px 0 0;
 }
-
 .tabbar .tab-btn.active {
   background: #fff;
   color: #1677ff;
   border-color: #ddd;
-  border-bottom-color: #fff; /* 与内容面板连接 */
+  border-bottom-color: #fff;
 }
 
 /* 内容面板容器 */
@@ -50,7 +44,7 @@
   padding: 12px;
   background: #fff;
   border: 1px solid #ddd;
-  border-top: none; /* 与激活的 tab 连接 */
+  border-top: none;
   border-radius: 0 8px 8px 8px;
 }
 
@@ -58,12 +52,19 @@
 .tabpane { display: none; }
 .tabpane.active { display: block; }
 
-/* 本地短语 */
-.phrase-cats {
+/* 本地短语：顶部类别栏与添加按钮 */
+.phrase-cats { -webkit-app-region: no-drag; }
+.phrase-cats .phrase-cats-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.phrase-cats .phrase-cats-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 10px;
 }
 .phrase-cats .cat {
   padding: 4px 10px;
@@ -79,6 +80,49 @@
   border-color: #91caff;
   color: #1677ff;
 }
+
+/* 添加按钮与下拉 */
+.phrase-cats-ops { position: relative; }
+.add-btn {
+  padding: 4px 10px;
+  border: 1px solid #ddd;
+  background: #fff;
+  color: #333;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.add-btn:hover { background: #f6faff; }
+
+.add-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 140px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  padding: 6px;
+  display: none;
+  z-index: 10;
+}
+.add-dropdown.open { display: block; }
+.add-dropdown .item {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #333;
+}
+.add-dropdown .item:hover { background: #f5f8ff; }
+
+/* 短语列表 */
 .phrase-list {
   display: grid;
   grid-template-columns: 1fr;
@@ -91,7 +135,7 @@
   border: 1px solid #eee;
   border-radius: 8px;
   background: #fff;
-  cursor: default;
+  cursor: pointer; /* 单击可粘贴 */
   user-select: none;
 }
 .phrase-item:hover { border-color: #ddd; }

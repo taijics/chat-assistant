@@ -463,6 +463,44 @@ ipcMain.on('phrase:paste', async (_e, text) => {
     console.error('phrase paste failed:', err);
   }
 });
+// 在原有 'phrase:paste' 之后，新增以下 IPC（粘贴并发送）
+// 说明：与 'phrase:paste' 相同粘贴逻辑，随后模拟 Enter 发送
+ipcMain.on('phrase:paste-send', async (_e, text) => {
+  try {
+    if (!text) return;
+    clipboard.writeText(String(text));
+
+    // 聚焦微信（与现有 phrase:paste 相同）
+    let toFocus = null;
+    if (wechatHWND) {
+      const wins = windowManager.getWindows();
+      toFocus = wins.find(w => Number(w.handle) === Number(wechatHWND));
+    }
+    if (!toFocus) {
+      const wins = windowManager.getWindows();
+      toFocus = wins.find(w => /微信|wechat/i.test(w.getTitle() || ''));
+    }
+    if (toFocus) {
+      try { toFocus.bringToTop(); } catch {}
+      try { toFocus.focus(); } catch {}
+    }
+
+    // 粘贴 -> 发送
+    setTimeout(() => {
+      try { sendKeys.sendCtrlV(); } catch {}
+      setTimeout(() => {
+        try { 
+          // 假设你的 send-keys 支持 sendEnter；如果名称不同，可改为 sendReturn / sendKey('enter')
+          sendKeys.sendEnter(); 
+        } catch {}
+        if (!pinnedAlwaysOnTop) updateZOrder();
+      }, 80);
+    }, 120);
+  } catch (err) {
+    console.error('phrase paste-send failed:', err);
+  }
+});
+
 // 选择目录（返回单个路径或 null）
 ipcMain.handle('media:choose-dir', async (_e, payload) => {
   const title = (payload && payload.title) || '选择文件夹';
