@@ -463,14 +463,13 @@ ipcMain.on('phrase:paste', async (_e, text) => {
     console.error('phrase paste failed:', err);
   }
 });
-// 在原有 'phrase:paste' 之后，新增以下 IPC（粘贴并发送）
-// 说明：与 'phrase:paste' 相同粘贴逻辑，随后模拟 Enter 发送
+// 粘贴并发送（双击）
 ipcMain.on('phrase:paste-send', async (_e, text) => {
   try {
     if (!text) return;
     clipboard.writeText(String(text));
 
-    // 聚焦微信（与现有 phrase:paste 相同）
+    // 聚焦微信（与你的 phrase:paste 相同逻辑）
     let toFocus = null;
     if (wechatHWND) {
       const wins = windowManager.getWindows();
@@ -485,14 +484,11 @@ ipcMain.on('phrase:paste-send', async (_e, text) => {
       try { toFocus.focus(); } catch {}
     }
 
-    // 粘贴 -> 发送
+    // 粘贴 -> 回车发送
     setTimeout(() => {
-      try { sendKeys.sendCtrlV(); } catch {}
+      try { require('./utils/send-keys').sendCtrlV(); } catch {}
       setTimeout(() => {
-        try { 
-          // 假设你的 send-keys 支持 sendEnter；如果名称不同，可改为 sendReturn / sendKey('enter')
-          sendKeys.sendEnter(); 
-        } catch {}
+        try { require('./utils/send-keys').sendEnter(); } catch {}
         if (!pinnedAlwaysOnTop) updateZOrder();
       }, 80);
     }, 120);
