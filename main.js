@@ -1,8 +1,22 @@
-const { app, BrowserWindow, ipcMain, screen, dialog, shell, clipboard } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  screen,
+  dialog,
+  shell,
+  clipboard,
+  Menu,
+  nativeImage
+} = require('electron');
 const wechatMonitor = require('./wechatMonitor');
-const { exec } = require('child_process');
-const { windowManager } = require('node-window-manager');        // 聚焦微信用
-const sendKeys = require('./utils/send-keys');                    // 发送按键
+const {
+  exec
+} = require('child_process');
+const {
+  windowManager
+} = require('node-window-manager'); // 聚焦微信用
+const sendKeys = require('./utils/send-keys'); // 发送按键
 
 let mainWindow = null;
 let miniWindow = null;
@@ -12,8 +26,18 @@ const LERP_SPEED = 0.22;
 const ANIMATION_INTERVAL = 16;
 const ASSISTANT_WIDTH = 350;
 
-let current = { x: 0, y: 0, w: ASSISTANT_WIDTH, h: 600 };
-let target  = { x: 0, y: 0, w: ASSISTANT_WIDTH, h: 600 };
+let current = {
+  x: 0,
+  y: 0,
+  w: ASSISTANT_WIDTH,
+  h: 600
+};
+let target = {
+  x: 0,
+  y: 0,
+  w: ASSISTANT_WIDTH,
+  h: 600
+};
 
 let userHidden = false;
 let wechatFound = false;
@@ -26,7 +50,9 @@ let pinnedAlwaysOnTop = false; // 置顶状态（默认关闭，不影响你既�
 let fgFollowTimer = null;
 const FG_CHECK_INTERVAL = 250;
 
-function lerp(a, b, t) { return a + (b - a) * t; }
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
 
 // 以“物理像素”选择显示器，再换算成 DIP
 function findDisplayForPhysicalRect(pxRect) {
@@ -36,7 +62,12 @@ function findDisplayForPhysicalRect(pxRect) {
   for (const d of displays) {
     const db = d.bounds;
     const s = d.scaleFactor || 1;
-    const pb = { x: Math.round(db.x * s), y: Math.round(db.y * s), width: Math.round(db.width * s), height: Math.round(db.height * s) };
+    const pb = {
+      x: Math.round(db.x * s),
+      y: Math.round(db.y * s),
+      width: Math.round(db.width * s),
+      height: Math.round(db.height * s)
+    };
     const ix = Math.max(pb.x, pxRect.x);
     const iy = Math.max(pb.y, pxRect.y);
     const ax = Math.min(pb.x + pb.width, pxRect.x + pxRect.width);
@@ -44,7 +75,10 @@ function findDisplayForPhysicalRect(pxRect) {
     const w = Math.max(0, ax - ix);
     const h = Math.max(0, ay - iy);
     const area = w * h;
-    if (area > bestArea) { bestArea = area; best = d; }
+    if (area > bestArea) {
+      bestArea = area;
+      best = d;
+    }
   }
   return best;
 }
@@ -71,7 +105,12 @@ function dockToWeChatRightOrLeftPx(pxRect) {
   if (nextX + ASSISTANT_WIDTH > wa.x + wa.width) nextX = wa.x + wa.width - ASSISTANT_WIDTH;
   const nextY = dip.y;
   const nextH = dip.height;
-  return { x: nextX, y: nextY, w: ASSISTANT_WIDTH, h: nextH };
+  return {
+    x: nextX,
+    y: nextY,
+    w: ASSISTANT_WIDTH,
+    h: nextH
+  };
 }
 
 function createMainWindow() {
@@ -82,7 +121,7 @@ function createMainWindow() {
     resizable: false,
     show: false,
     transparent: false,
-    titleBarStyle: 'hidden', // 使用自定义标题栏
+    titleBarStyle: 'hidden',
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
@@ -90,14 +129,44 @@ function createMainWindow() {
   });
   mainWindow.loadFile('renderer/index.html');
 
+  // 仅在本窗口聚焦时有效：Alt + D 切换 DevTools（不注册全局快捷键）
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (
+      input.type === 'keyDown' &&
+      input.alt &&
+      !input.control &&
+      !input.shift &&
+      String(input.key || '').toLowerCase() === 'd'
+    ) {
+      event.preventDefault();
+      const wc = mainWindow.webContents;
+      if (wc.isDevToolsOpened()) wc.closeDevTools();
+      else wc.openDevTools({
+        mode: 'detach'
+      }); // 独立窗口，避免影响布局
+    }
+  });
+
   // 渲染完成后把置顶状态同步给内嵌标题栏（不再自动打开 DevTools）
   mainWindow.webContents.on('did-finish-load', () => {
     mainWindow.webContents.send('toolbar:pin-state', pinnedAlwaysOnTop);
   });
 }
+// 复用的切换函数（供菜单/IPC/before-input-event 都可调用）
+function toggleDevTools() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const wc = mainWindow.webContents;
+    if (wc.isDevToolsOpened()) wc.closeDevTools();
+    else wc.openDevTools({
+      mode: 'detach'
+    }); // 或改成 { mode: 'right' } 方便你先看到
+  }
+}
 
 function createMiniWindow() {
-  const { width } = screen.getPrimaryDisplay().workAreaSize;
+  const {
+    width
+  } = screen.getPrimaryDisplay().workAreaSize;
   miniWindow = new BrowserWindow({
     width: 160,
     height: 40,
@@ -130,7 +199,9 @@ function showMain() {
 
 function applyTargetImmediate() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  current = { ...target };
+  current = {
+    ...target
+  };
   mainWindow.setBounds({
     x: Math.round(current.x),
     y: Math.round(current.y),
@@ -170,30 +241,64 @@ function startForegroundFollow() {
 
 function handleEvent(evt) {
   if (quitting) return;
-  const { type, x, y, width, height, hwnd } = evt;
+  const {
+    type,
+    x,
+    y,
+    width,
+    height,
+    hwnd
+  } = evt;
   switch (type) {
     case 'found':
       wechatFound = true;
       wechatHWND = hwnd;
-      target = dockToWeChatRightOrLeftPx({ x, y, width, height });
+      target = dockToWeChatRightOrLeftPx({
+        x,
+        y,
+        width,
+        height
+      });
       applyTargetImmediate();
       firstDirectPosition = true;
-      if (!userHidden) { showMain(); updateZOrder(); }
+      if (!userHidden) {
+        showMain();
+        updateZOrder();
+      }
       break;
     case 'position':
       if (!wechatFound) return;
-      target = dockToWeChatRightOrLeftPx({ x, y, width, height });
-      if (!firstDirectPosition) { applyTargetImmediate(); firstDirectPosition = true; }
-      if (!userHidden) { showMain(); updateZOrder(); }
+      target = dockToWeChatRightOrLeftPx({
+        x,
+        y,
+        width,
+        height
+      });
+      if (!firstDirectPosition) {
+        applyTargetImmediate();
+        firstDirectPosition = true;
+      }
+      if (!userHidden) {
+        showMain();
+        updateZOrder();
+      }
       break;
     case 'foreground':
-      if (!userHidden) { showMain(); updateZOrder(); }
+      if (!userHidden) {
+        showMain();
+        updateZOrder();
+      }
       break;
     case 'minimized':
-      if (!userHidden) { showMini(); }
+      if (!userHidden) {
+        showMini();
+      }
       break;
     case 'restored':
-      if (!userHidden) { showMain(); updateZOrder(); }
+      if (!userHidden) {
+        showMain();
+        updateZOrder();
+      }
       break;
     case 'destroyed':
       wechatFound = false;
@@ -226,12 +331,29 @@ function startAnimationLoop() {
 
 app.whenReady().then(() => {
   createMainWindow();
-  createMiniWindow(); // 默认先显示迷你窗口
-  // 仅按进程名识别，避免误吸附编辑器
-  wechatMonitor.start({ keywords: [] }, handleEvent);
+  createMiniWindow();
+  wechatMonitor.start({
+    keywords: []
+  }, handleEvent);
   startAnimationLoop();
-  // 新增：启动前台跟随
   startForegroundFollow();
+
+  // 新增：应用菜单加速键（frame:false 下菜单不可见，但 accelerator 生效）
+  const menu = Menu.buildFromTemplate([{
+    label: 'Debug',
+    submenu: [{
+        label: 'Toggle DevTools',
+        accelerator: 'Alt+D',
+        click: toggleDevTools
+      },
+      // 备用：保留 Electron 默认的切换快捷键
+      {
+        role: 'toggleDevTools',
+        accelerator: 'Ctrl+Shift+I'
+      }
+    ]
+  }]);
+  Menu.setApplicationMenu(menu);
 });
 
 // 最小化/恢复/退出
@@ -241,10 +363,22 @@ ipcMain.on('close-main-window', () => {
 });
 ipcMain.on('restore-main-window', () => {
   userHidden = false;
-  if (wechatFound) { showMain(); updateZOrder(); }
-  else { showMini(); }
+  if (wechatFound) {
+    showMain();
+    updateZOrder();
+  } else {
+    showMini();
+  }
 });
-ipcMain.on('exit-app', () => { cleanupAndQuit(); });
+ipcMain.on('exit-app', () => {
+  cleanupAndQuit();
+});
+// Alt + D 来自 renderer：切换 DevTools（不改变默认不开启的行为）
+// IPC
+ipcMain.on('devtools:toggle', () => {
+  toggleDevTools();
+});
+
 
 // 顶栏菜单动作（从渲染进程 header 发来）
 ipcMain.on('toolbar:click', async (_e, action) => {
@@ -313,8 +447,12 @@ ipcMain.on('phrase:paste', async (_e, text) => {
       toFocus = wins.find(w => /微信|wechat/i.test(w.getTitle() || ''));
     }
     if (toFocus) {
-      try { toFocus.bringToTop(); } catch {}
-      try { toFocus.focus(); } catch {}
+      try {
+        toFocus.bringToTop();
+      } catch {}
+      try {
+        toFocus.focus();
+      } catch {}
     }
 
     setTimeout(() => {
@@ -325,7 +463,48 @@ ipcMain.on('phrase:paste', async (_e, text) => {
     console.error('phrase paste failed:', err);
   }
 });
+// 选择目录（返回单个路径或 null）
+ipcMain.handle('media:choose-dir', async (_e, payload) => {
+  const title = (payload && payload.title) || '选择文件夹';
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title,
+    properties: ['openDirectory']
+  });
+  if (canceled || !filePaths || !filePaths[0]) return null;
+  return filePaths[0];
+});
 
+// 粘贴图片到微信：写入剪贴板图片 -> 聚焦微信 -> Ctrl+V
+ipcMain.on('media:image-paste', async (_e, filePath) => {
+  try {
+    if (!filePath) return;
+    const img = nativeImage.createFromPath(String(filePath));
+    if (!img || (typeof img.isEmpty === 'function' && img.isEmpty())) return;
+    clipboard.writeImage(img);
+
+    // 复用你的聚焦逻辑
+    let toFocus = null;
+    if (wechatHWND) {
+      const wins = windowManager.getWindows();
+      toFocus = wins.find(w => Number(w.handle) === Number(wechatHWND));
+    }
+    if (!toFocus) {
+      const wins = windowManager.getWindows();
+      toFocus = wins.find(w => /微信|wechat/i.test(w.getTitle() || ''));
+    }
+    if (toFocus) {
+      try { toFocus.bringToTop(); } catch {}
+      try { toFocus.focus(); } catch {}
+    }
+
+    setTimeout(() => {
+      try { require('./utils/send-keys').sendCtrlV(); } catch {}
+      if (!pinnedAlwaysOnTop) updateZOrder();
+    }, 120);
+  } catch (err) {
+    console.error('image paste failed:', err);
+  }
+});
 async function handleExport() {
   try {
     let data = null;
@@ -340,10 +519,16 @@ async function handleExport() {
     if (!data) {
       data = '# 导出内容\n\n当前页面未提供导出实现（__exportChatData）。\n请在渲染进程定义 window.__exportChatData() 返回 Markdown 文本。';
     }
-    const { canceled, filePath } = await dialog.showSaveDialog({
+    const {
+      canceled,
+      filePath
+    } = await dialog.showSaveDialog({
       title: '导出聊天为 Markdown',
       defaultPath: 'chat-export.md',
-      filters: [{ name: 'Markdown', extensions: ['md'] }]
+      filters: [{
+        name: 'Markdown',
+        extensions: ['md']
+      }]
     });
     if (!canceled && filePath) {
       const fs = require('fs');
@@ -363,7 +548,10 @@ function openSettingsWindow() {
     height: 320,
     resizable: false,
     title: '设置',
-    webPreferences: { nodeIntegration: true, contextIsolation: false }
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
   });
   win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`
     <!doctype html><html><head><meta charset="utf-8"><title>设置</title>
@@ -388,7 +576,9 @@ function openSettingsWindow() {
   `));
 }
 
-ipcMain.handle('settings:get', () => ({ pinned: pinnedAlwaysOnTop }));
+ipcMain.handle('settings:get', () => ({
+  pinned: pinnedAlwaysOnTop
+}));
 ipcMain.on('settings:set', (_e, payload) => {
   const v = !!(payload && payload.pinned);
   if (v !== pinnedAlwaysOnTop) {
@@ -419,13 +609,27 @@ function showAbout() {
 function cleanupAndQuit() {
   if (quitting) return;
   quitting = true;
-  if (animationTimer) { clearInterval(animationTimer); animationTimer = null; }
+  if (animationTimer) {
+    clearInterval(animationTimer);
+    animationTimer = null;
+  }
   // 新增：清理前台跟随定时器
-  if (fgFollowTimer) { clearInterval(fgFollowTimer); fgFollowTimer = null; }
-  try { wechatMonitor.stop(); } catch {}
-  try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy(); } catch {}
-  try { if (miniWindow && !miniWindow.isDestroyed()) miniWindow.destroy(); } catch {}
+  if (fgFollowTimer) {
+    clearInterval(fgFollowTimer);
+    fgFollowTimer = null;
+  }
+  try {
+    wechatMonitor.stop();
+  } catch {}
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+  } catch {}
+  try {
+    if (miniWindow && !miniWindow.isDestroyed()) miniWindow.destroy();
+  } catch {}
   app.quit();
 }
 
-app.on('window-all-closed', () => { cleanupAndQuit(); });
+app.on('window-all-closed', () => {
+  cleanupAndQuit();
+});

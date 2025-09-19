@@ -4,11 +4,22 @@
     <meta charset="UTF-8" />
     <title>助手</title>
     <style>
-      body { margin: 0; font-family: system-ui, Arial, sans-serif; background: #f5f6f7; -webkit-user-select: none; }
-      .titlebar { display:none } /* 旧样式保留但不使用 */
+      body {
+        margin: 0;
+        font-family: system-ui, Arial, sans-serif;
+        background: #f5f6f7;
+        -webkit-user-select: none;
+      }
+
+      .titlebar {
+        display: none
+      }
+
+      /* 旧样式保留但不使用 */
     </style>
     <link rel="stylesheet" href="./css/header.css">
     <link rel="stylesheet" href="./css/phrases.css">
+    <link rel="stylesheet" href="./css/tabs.css">
   </head>
   <body>
     <div class="app-titlebar">
@@ -17,7 +28,9 @@
       <div class="btn" id="btn-settings" title="设置">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
           <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" stroke="currentColor" stroke-width="1.7" />
-          <path d="M19 12a7 7 0 0 0-.06-.9l1.94-1.5-1.9-3.29-2.27.92a7.08 7.08 0 0 0-1.56-.9L14.7 3h-5.4l-.45 2.33a7.08 7.08 0 0 0-1.56.9l-2.27-.92-1.9 3.29 1.94 1.5A7 7 0 0 0 5 12c0 .3.02.6.06.9l-1.94 1.5 1.9 3.29 2.27-.92c.48.39 1 .7 1.56.9L9.3 21h5.4l.45-2.33c.56-.2 1.08-.51 1.56-.9l2.27.92 1.9-3.29-1.94-1.5c.04-.3.06-.6.06-.9Z" stroke="currentColor" stroke-width="1.1" />
+          <path
+            d="M19 12a7 7 0 0 0-.06-.9l1.94-1.5-1.9-3.29-2.27.92a7.08 7.08 0 0 0-1.56-.9L14.7 3h-5.4l-.45 2.33a7.08 7.08 0 0 0-1.56.9l-2.27-.92-1.9 3.29 1.94 1.5A7 7 0 0 0 5 12c0 .3.02.6.06.9l-1.94 1.5 1.9 3.29 2.27-.92c.48.39 1 .7 1.56.9L9.3 21h5.4l.45-2.33c.56-.2 1.08-.51 1.56-.9l2.27.92 1.9-3.29-1.94-1.5c.04-.3.06-.6.06-.9Z"
+            stroke="currentColor" stroke-width="1.1" />
         </svg>
       </div>
       <div class="btn" id="btn-minimize" title="最小化">
@@ -30,6 +43,52 @@
           <path d="M3.5 3.5l9 9m0-9l-9 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
         </svg>
       </div>
+    </div>
+
+    <!-- Tabs bar -->
+    <div class="tabbar" id="tabbar">
+      <button class="tab-btn active" data-tab="phrases">本地短语</button>
+      <button class="tab-btn" data-tab="ai">AI</button>
+      <button class="tab-btn" data-tab="images">本地图片</button>
+      <button class="tab-btn" data-tab="emojis">本地表情</button>
+    </div>
+
+    <!-- Tabs content -->
+    <div class="tabpanes">
+      <!-- 本地短语 -->
+      <section class="tabpane active" id="tab-phrases">
+        <div class="phrase-cats" id="phrase-cats"></div>
+        <div class="phrase-list" id="phrase-list"></div>
+      </section>
+
+      <!-- AI -->
+      <section class="tabpane" id="tab-ai">
+        <div class="ai-input">
+          <textarea id="ai-context" placeholder="粘贴/输入上下文，点击‘生成建议’"></textarea>
+          <div class="ai-actions">
+            <button id="ai-generate">生成建议</button>
+          </div>
+        </div>
+        <ul class="ai-suggestions" id="ai-suggestions"></ul>
+      </section>
+
+      <!-- 本地图片 -->
+      <section class="tabpane" id="tab-images">
+        <div class="media-toolbar">
+          <button id="img-pick">选择图片文件夹</button>
+          <span class="media-folder" id="img-folder"></span>
+        </div>
+        <div class="media-grid" id="img-grid"></div>
+      </section>
+
+      <!-- 本地表情 -->
+      <section class="tabpane" id="tab-emojis">
+        <div class="media-toolbar">
+          <button id="emo-pick">选择表情文件夹</button>
+          <span class="media-folder" id="emo-folder"></span>
+        </div>
+        <div class="media-grid small" id="emo-grid"></div>
+      </section>
     </div>
 
     <div class="app-menu" id="app-menu">
@@ -54,7 +113,8 @@
     <div class="app-content">
       <!-- 你的内容区域 -->
     </div>
-
+    <script src="./js/tabs.js"></script>
+    <script src="./js/ai.js"></script>
     <script src="./js/phrases.js"></script>
     <script src="./js/header.js"></script>
     <!-- 注意：删除旧的内联脚本（.minimize/.close 绑定），避免报错 -->
