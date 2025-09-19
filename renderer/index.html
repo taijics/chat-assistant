@@ -45,51 +45,51 @@
       </div>
     </div>
 
-    <!-- Tabs bar -->
-    <div class="tabbar" id="tabbar">
-      <button class="tab-btn active" data-tab="phrases">本地短语</button>
-      <button class="tab-btn" data-tab="ai">AI</button>
-      <button class="tab-btn" data-tab="images">本地图片</button>
-      <button class="tab-btn" data-tab="emojis">本地表情</button>
-    </div>
-
-    <!-- Tabs content -->
-    <div class="tabpanes">
-      <!-- 本地短语 -->
-      <section class="tabpane active" id="tab-phrases">
-        <div class="phrase-cats" id="phrase-cats"></div>
-        <div class="phrase-list" id="phrase-list"></div>
-      </section>
-
-      <!-- AI -->
-      <section class="tabpane" id="tab-ai">
-        <div class="ai-input">
-          <textarea id="ai-context" placeholder="粘贴/输入上下文，点击‘生成建议’"></textarea>
-          <div class="ai-actions">
-            <button id="ai-generate">生成建议</button>
-          </div>
-        </div>
-        <ul class="ai-suggestions" id="ai-suggestions"></ul>
-      </section>
-
-      <!-- 本地图片 -->
-      <section class="tabpane" id="tab-images">
-        <div class="media-toolbar">
-          <button id="img-pick">选择图片文件夹</button>
-          <span class="media-folder" id="img-folder"></span>
-        </div>
-        <div class="media-grid" id="img-grid"></div>
-      </section>
-
-      <!-- 本地表情 -->
-      <section class="tabpane" id="tab-emojis">
-        <div class="media-toolbar">
-          <button id="emo-pick">选择表情文件夹</button>
-          <span class="media-folder" id="emo-folder"></span>
-        </div>
-        <div class="media-grid small" id="emo-grid"></div>
-      </section>
-    </div>
+   <!-- Tabs bar -->
+   <div class="tabbar" id="tabbar" role="tablist" aria-label="主功能选项卡">
+     <button class="tab-btn active" role="tab" id="tabbtn-phrases" aria-controls="tab-phrases" aria-selected="true" tabindex="0" data-tab="phrases">本地短语</button>
+     <button class="tab-btn" role="tab" id="tabbtn-ai" aria-controls="tab-ai" aria-selected="false" tabindex="-1" data-tab="ai">AI</button>
+     <button class="tab-btn" role="tab" id="tabbtn-images" aria-controls="tab-images" aria-selected="false" tabindex="-1" data-tab="images">本地图片</button>
+     <button class="tab-btn" role="tab" id="tabbtn-emojis" aria-controls="tab-emojis" aria-selected="false" tabindex="-1" data-tab="emojis">本地表情</button>
+   </div>
+   
+   <!-- Tabs content -->
+   <div class="tabpanes">
+     <!-- 本地短语 -->
+     <section class="tabpane active" role="tabpanel" id="tab-phrases" aria-labelledby="tabbtn-phrases" aria-hidden="false">
+       <div class="phrase-cats" id="phrase-cats"></div>
+       <div class="phrase-list" id="phrase-list"></div>
+     </section>
+   
+     <!-- AI -->
+     <section class="tabpane" role="tabpanel" id="tab-ai" aria-labelledby="tabbtn-ai" aria-hidden="true">
+       <div class="ai-input">
+         <textarea id="ai-context" placeholder="粘贴/输入上下文，点击‘生成建议’"></textarea>
+         <div class="ai-actions">
+           <button id="ai-generate">生成建议</button>
+         </div>
+       </div>
+       <ul class="ai-suggestions" id="ai-suggestions"></ul>
+     </section>
+   
+     <!-- 本地图片 -->
+     <section class="tabpane" role="tabpanel" id="tab-images" aria-labelledby="tabbtn-images" aria-hidden="true">
+       <div class="media-toolbar">
+         <button id="img-pick">选择图片文件夹</button>
+         <span class="media-folder" id="img-folder"></span>
+       </div>
+       <div class="media-grid" id="img-grid"></div>
+     </section>
+   
+     <!-- 本地表情 -->
+     <section class="tabpane" role="tabpanel" id="tab-emojis" aria-labelledby="tabbtn-emojis" aria-hidden="true">
+       <div class="media-toolbar">
+         <button id="emo-pick">选择表情文件夹</button>
+         <span class="media-folder" id="emo-folder"></span>
+       </div>
+       <div class="media-grid small" id="emo-grid"></div>
+     </section>
+   </div>
 
     <div class="app-menu" id="app-menu">
       <ul>

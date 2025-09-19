@@ -1,31 +1,60 @@
-/* 让选项卡区域可交互（不被拖拽区域吞掉事件） */
+/* 选项卡头部区域需可交互（避免被拖拽区域吞掉事件） */
 .tabbar { -webkit-app-region: no-drag; }
 
+/* Tabs 头：水平页签 */
 .tabbar {
   display: flex;
-  gap: 8px;
-  padding: 8px 12px;
-  border-top: 1px solid #e6e6e6;
-  border-bottom: 1px solid #e6e6e6;
-  background: #fafafa;
+  gap: 6px;
+  padding: 0 12px;
+  background: #f6f7f9;
+  border-bottom: 1px solid #ddd;
+  /* 这个 margin-top 是为避开自定义标题栏，如不需要可去掉或调整 */
   margin-top: 40px;
 }
+
 .tabbar .tab-btn {
-  padding: 6px 12px;
-  border: 1px solid #ddd;
-  background: #fff;
+  appearance: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
   color: #333;
-  border-radius: 6px;
-  cursor: pointer;
+  padding: 8px 14px;
+  margin: 0;
+  margin-bottom: -1px; /* 让激活态与内容面板无缝连接 */
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
   font-size: 13px;
-}
-.tabbar .tab-btn.active {
-  background: #1677ff;
-  color: #fff;
-  border-color: #1677ff;
+  cursor: pointer;
+  line-height: 1;
+  outline: none;
 }
 
-.tabpanes { padding: 10px 12px; }
+.tabbar .tab-btn:hover {
+  background: #eef5ff;
+}
+
+.tabbar .tab-btn:focus-visible {
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.35);
+  border-radius: 8px 8px 0 0;
+}
+
+.tabbar .tab-btn.active {
+  background: #fff;
+  color: #1677ff;
+  border-color: #ddd;
+  border-bottom-color: #fff; /* 与内容面板连接 */
+}
+
+/* 内容面板容器 */
+.tabpanes {
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-top: none; /* 与激活的 tab 连接 */
+  border-radius: 0 8px 8px 8px;
+}
+
+/* 面板显隐 */
 .tabpane { display: none; }
 .tabpane.active { display: block; }
 
