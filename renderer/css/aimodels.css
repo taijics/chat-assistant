@@ -1,0 +1,131 @@
+/* AI 模型内嵌浏览器区域 */
+.aimodels { -webkit-app-region: no-drag; }
+
+.aimodels-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.aim-tab {
+  appearance: none;
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  background: #fff;
+  color: #333;
+  border-radius: 999px;
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1;
+}
+.aim-tab:hover { background: #f6faff; }
+.aim-tab:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(22,119,255,0.25); }
+.aim-tab.active {
+  background: #e6f4ff;
+  border-color: #91caff;
+  color: #1677ff;
+}
+
+.aimodels-view {
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* BrowserView 承载容器，仅用于确定坐标 */
+.aimodels-host {
+  width: 100%;
+  height: 70vh;
+}
+
+/* 兜底 iframe（当主进程未实现 BrowserView 时显示） */
+#aimodels-fallback {
+  display: block;
+  width: 100%;
+  height: 70vh;
+  border: 0;
+  background: #fff;
+}
+
+.aimodels-tip {
+  color: #999;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+/* AI 模型内嵌浏览器区域 */
+.aimodels { -webkit-app-region: no-drag; }
+
+.aimodels-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.aimodels-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.aimodels-actions button {
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.aimodels-actions button:hover { background: #f6f6f6; }
+
+.aim-tab {
+  appearance: none;
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  background: #fff;
+  color: #333;
+  border-radius: 999px;
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1;
+}
+.aim-tab:hover { background: #f6faff; }
+.aim-tab:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(22,119,255,0.25); }
+.aim-tab.active {
+  background: #e6f4ff;
+  border-color: #91caff;
+  color: #1677ff;
+}
+
+.aimodels-view {
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* BrowserView 承载容器，仅用于确定坐标 */
+.aimodels-host {
+  width: 100%;
+  height: 70vh;
+}
+
+/* 兜底 iframe */
+#aimodels-fallback {
+  display: block;
+  width: 100%;
+  height: 70vh;
+  border: 0;
+  background: #fff;
+}
+
+.aimodels-tip {
+  color: #999;
+  font-size: 12px;
+  margin-top: 8px;
+}

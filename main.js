@@ -10,6 +10,7 @@ const {
   nativeImage
 } = require('electron');
 const wechatMonitor = require('./wechatMonitor');
+const { registerAimodelsHandlers } = require('./main/aimodels');
 const {
   exec
 } = require('child_process');
@@ -128,6 +129,7 @@ function createMainWindow() {
     }
   });
   mainWindow.loadFile('renderer/index.html');
+  registerAimodelsHandlers(mainWindow);
 
   // 仅在本窗口聚焦时有效：Alt + D 切换 DevTools（不注册全局快捷键）
   mainWindow.webContents.on('before-input-event', (event, input) => {
