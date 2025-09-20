@@ -6,20 +6,13 @@
   const STORAGE_KEY = 'phrases.data.v1';
   const ACTIVE_CAT_KEY = 'phrases.activeCat';
 
-  // 单击/双击判定窗口：在该时间内若发生双击，则取消单击动作
-  const SINGLE_CLICK_DELAY = 300; // ms
+  const SINGLE_CLICK_DELAY = 300;
 
-  // 只绑定一次的全局监听标记
   let docClosersBound = false;
   let listEventsBound = false;
 
-  // 轻量内置 Prompt（替代 window.prompt）
   async function uiPrompt(options) {
-    const opts = Object.assign({
-      title: '请输入内容',
-      placeholder: '',
-      defaultValue: ''
-    }, options || {});
+    const opts = Object.assign({ title: '请输入内容', placeholder: '', defaultValue: '' }, options || {});
     return new Promise((resolve) => {
       const mask = document.createElement('div');
       mask.className = 'prompt-mask';
@@ -114,7 +107,7 @@
       </div>
     `;
 
-    // 切换类别（事件委托）
+    // 切换类别
     const list = $('.phrase-cats-list', wrap);
     list.addEventListener('click', (e) => {
       const btn = e.target.closest('.cat');
@@ -129,7 +122,6 @@
     // “＋”按钮控制下拉显隐
     const opsBtn = $('#btn-cat-ops', wrap);
     const dd = $('#cat-add-dropdown', wrap);
-
     function openDropdown() { dd.classList.add('open'); dd.setAttribute('aria-hidden', 'false'); }
     function closeDropdown() { dd.classList.remove('open'); dd.setAttribute('aria-hidden', 'true'); }
 
@@ -138,7 +130,6 @@
       if (dd.classList.contains('open')) closeDropdown(); else openDropdown();
     });
 
-    // 下拉项点击（捕获阶段 + stopPropagation）
     dd.addEventListener('click', (e) => {
       const item = e.target.closest('.item');
       if (!item) return;
@@ -151,12 +142,10 @@
       }, 0);
     }, { capture: true });
 
-    // 全局一次性绑定：点击其它位置或 ESC 关闭下拉
     if (!docClosersBound) {
       docClosersBound = true;
       document.addEventListener('click', (e) => {
-        const catsWrap = $('#phrase-cats');
-        if (!catsWrap) return;
+        const catsWrap = $('#phrase-cats'); if (!catsWrap) return;
         const ddEl = catsWrap.querySelector('#cat-add-dropdown');
         const btnEl = catsWrap.querySelector('#btn-cat-ops');
         if (!ddEl) return;
@@ -211,7 +200,6 @@
     `).join('');
   }
 
-  // 只给 #phrase-list 容器绑定一次事件，避免多次渲染导致重复绑定
   function bindListEventsOnce() {
     if (listEventsBound) return;
     listEventsBound = true;
@@ -221,17 +209,15 @@
 
     let singleTimer = null;
 
-    // 单一 click 监听 + dblclick 监听的经典组合
     listWrap.addEventListener('click', (e) => {
       const item = e.target.closest('.phrase-item');
       if (!item) return;
       const text = item.dataset.text || '';
       if (!text) return;
 
-      // 延时执行单击，如果在延时内捕获到 dblclick，会被取消
       clearTimeout(singleTimer);
       singleTimer = setTimeout(() => {
-        ipcRenderer.send('phrase:paste', text); // 单击：只粘贴
+        ipcRenderer.send('phrase:paste', text);
         singleTimer = null;
       }, SINGLE_CLICK_DELAY);
     });
@@ -242,16 +228,31 @@
       const text = item.dataset.text || '';
       if (!text) return;
 
-      // 取消待执行的单击，只执行一次双击行为
       if (singleTimer) { clearTimeout(singleTimer); singleTimer = null; }
-      ipcRenderer.send('phrase:paste-send', text); // 双击：粘贴并发送（仅一次）
+      ipcRenderer.send('phrase:paste-send', text);
     });
   }
+
+  // 接收 AI 保存后发出的刷新事件，立即从存储重载并刷新 UI
+  function refreshFromStorage(savedStyle) {
+    data = loadData();
+    // 若当前激活分类已不存在或未设置，则优先切到刚保存的风格分类
+    if (!activeCat || !data.cats.find(c => c.name === activeCat)) {
+      activeCat = savedStyle || data.cats[0]?.name || '';
+      try { localStorage.setItem(ACTIVE_CAT_KEY, activeCat); } catch {}
+    }
+    renderCats();
+    renderList();
+    bindListEventsOnce();
+  }
+  window.addEventListener('ai:saved-phrase', (e) => {
+    const style = e && e.detail && e.detail.style;
+    refreshFromStorage(style);
+  });
 
   function render() {
     renderCats();
     renderList();
-    // 确保事件只绑定一次
     bindListEventsOnce();
   }
 

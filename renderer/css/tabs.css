@@ -1,5 +1,7 @@
 /* 选项卡头部区域需可交互（避免被拖拽区域吞掉事件） */
-.tabbar { -webkit-app-region: no-drag; }
+.tabbar {
+  -webkit-app-region: no-drag;
+}
 
 /* Tabs 头：水平页签 */
 .tabbar {
@@ -27,11 +29,16 @@
   line-height: 1;
   outline: none;
 }
-.tabbar .tab-btn:hover { background: #eef5ff; }
+
+.tabbar .tab-btn:hover {
+  background: #eef5ff;
+}
+
 .tabbar .tab-btn:focus-visible {
   box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.35);
   border-radius: 8px 8px 0 0;
 }
+
 .tabbar .tab-btn.active {
   background: #fff;
   color: #1677ff;
@@ -49,23 +56,34 @@
 }
 
 /* 面板显隐 */
-.tabpane { display: none; }
-.tabpane.active { display: block; }
+.tabpane {
+  display: none;
+}
+
+.tabpane.active {
+  display: block;
+}
 
 /* 本地短语：顶部类别栏与添加按钮 */
-.phrase-cats { -webkit-app-region: no-drag; }
+.phrase-cats {
+  -webkit-app-region: no-drag;
+}
+
 .phrase-cats .phrase-cats-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between; /* 左边类别、右边操作 */
+  justify-content: space-between;
+  /* 左边类别、右边操作 */
   gap: 8px;
   margin-bottom: 10px;
 }
+
 .phrase-cats .phrase-cats-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
+
 .phrase-cats .cat {
   padding: 4px 10px;
   border: 1px solid #ddd;
@@ -75,6 +93,7 @@
   cursor: pointer;
   color: #333;
 }
+
 .phrase-cats .cat.active {
   background: #e6f4ff;
   border-color: #91caff;
@@ -82,7 +101,11 @@
 }
 
 /* 添加按钮与下拉 */
-.phrase-cats-ops { position: relative; flex: 0 0 auto; }
+.phrase-cats-ops {
+  position: relative;
+  flex: 0 0 auto;
+}
+
 .add-btn {
   padding: 4px 10px;
   border: 1px solid #ddd;
@@ -93,7 +116,10 @@
   font-size: 13px;
   line-height: 1;
 }
-.add-btn:hover { background: #f6faff; }
+
+.add-btn:hover {
+  background: #f6faff;
+}
 
 .add-dropdown {
   position: absolute;
@@ -103,13 +129,17 @@
   background: #fff;
   border: 1px solid #ddd;
   border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
   padding: 6px;
   display: none;
   z-index: 1000;
   box-sizing: border-box;
 }
-.add-dropdown.open { display: block; }
+
+.add-dropdown.open {
+  display: block;
+}
+
 .add-dropdown .item {
   width: 100%;
   text-align: left;
@@ -121,7 +151,10 @@
   font-size: 13px;
   color: #333;
 }
-.add-dropdown .item:hover { background: #f5f8ff; }
+
+.add-dropdown .item:hover {
+  background: #f5f8ff;
+}
 
 /* 短语列表 */
 .phrase-list {
@@ -131,39 +164,101 @@
   max-height: 48vh;
   overflow: auto;
 }
+
 .phrase-item {
   padding: 8px 10px;
   border: 1px solid #eee;
   border-radius: 8px;
   background: #fff;
-  cursor: pointer; /* 单击可粘贴 */
+  cursor: pointer;
+  /* 单击可粘贴 */
   user-select: none;
 }
-.phrase-item:hover { border-color: #ddd; }
-.phrase-item .meta { font-size: 12px; color: #999; margin-top: 4px; }
+
+.phrase-item:hover {
+  border-color: #ddd;
+}
+
+.phrase-item .meta {
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
+}
 
 /* AI */
 .ai-input textarea {
-  width: 100%;
+  width: 95%;
   min-height: 80px;
   resize: vertical;
   padding: 8px;
-  border: 1px solid #ddd; border-radius: 6px;
-  font-family: inherit; font-size: 13px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
 }
-.ai-actions { margin-top: 8px; }
-.ai-actions button { padding: 6px 12px; border-radius: 6px; border: 1px solid #1677ff; background: #1677ff; color: #fff; cursor: pointer; }
-.ai-suggestions { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
+
+.ai-actions {
+  margin-top: 8px;
+}
+
+.ai-actions button {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #1677ff;
+  background: #1677ff;
+  color: #fff;
+  cursor: pointer;
+}
+
+.ai-suggestions {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: grid;
+  gap: 8px;
+}
+
 .ai-suggestions li {
-  border: 1px solid #eee; border-radius: 8px; padding: 10px; background: #fff;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
 }
-.ai-suggestions .title { font-weight: 600; margin-bottom: 4px; font-size: 13px; }
-.ai-suggestions .ops { margin-top: 8px; display: flex; gap: 8px; }
-.ai-suggestions .ops button { padding: 4px 10px; border-radius: 6px; border: 1px solid #ddd; background: #fafafa; cursor: pointer; }
+
+.ai-suggestions .title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.ai-suggestions .ops {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.ai-suggestions .ops button {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  background: #fafafa;
+  cursor: pointer;
+  color: #000;
+}
 
 /* 图片/表情 */
-.media-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-.media-folder { color: #666; font-size: 12px; }
+.media-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.media-folder {
+  color: #666;
+  font-size: 12px;
+}
+
 .media-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
@@ -171,41 +266,61 @@
   max-height: 48vh;
   overflow: auto;
 }
-.media-grid.small { grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); }
-.media-thumb {
-  border: 1px solid #eee; border-radius: 8px; overflow: hidden; background: #fff; cursor: pointer;
-  display: flex; align-items: center; justify-content: center; aspect-ratio: 1 / 1;
+
+.media-grid.small {
+  grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
 }
+
+.media-thumb {
+  border: 1px solid #eee;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1 / 1;
+}
+
 .media-thumb img {
-  max-width: 100%; max-height: 100%; display: block;
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
 }
 
 /* 内置 Prompt 弹窗（替代 window.prompt） */
 .prompt-mask {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.35);
+  background: rgba(0, 0, 0, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 2000;
 }
+
 .prompt-dialog {
   width: 360px;
   max-width: calc(100% - 48px);
   background: #fff;
   border: 1px solid #e6e6e6;
   border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
   padding: 14px;
 }
+
 .prompt-title {
   font-size: 14px;
   font-weight: 600;
   margin-bottom: 10px;
   color: #333;
 }
-.prompt-body { margin-bottom: 12px; }
+
+.prompt-body {
+  margin-bottom: 12px;
+}
+
 .prompt-input {
   width: 94%;
   padding: 8px 10px;
@@ -214,12 +329,18 @@
   font-size: 13px;
   outline: none;
 }
-.prompt-input:focus { border-color: #91caff; box-shadow: 0 0 0 2px rgba(22,119,255,0.15); }
+
+.prompt-input:focus {
+  border-color: #91caff;
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.15);
+}
+
 .prompt-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
 }
+
 .prompt-actions .btn-ok,
 .prompt-actions .btn-cancel {
   padding: 6px 12px;
@@ -229,9 +350,34 @@
   border: 1px solid #ddd;
   background: #fafafa;
 }
+
 .prompt-actions .btn-ok {
   border-color: #1677ff;
   background: #1677ff;
   color: #fff;
 }
-.prompt-actions .btn-cancel {
+
+/* 追加：AI 编辑态样式优化（保留原有样式不变） */
+.ai-suggestions li { position: relative; }
+.ai-suggestions li .editor[hidden] { display: none; }
+.ai-suggestions li .editor textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+.ai-suggestions li .editor textarea:focus {
+  border-color: #91caff;
+  box-shadow: 0 0 0 2px rgba(22,119,255,0.15);
+}
+.ai-suggestions .btn-primary {
+  border: 1px solid #1677ff;
+  background: #1677ff;
+  color: #fff;
+}
