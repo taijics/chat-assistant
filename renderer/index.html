@@ -9,8 +9,23 @@
         font-family: system-ui, Arial, sans-serif;
         background: #f5f6f7;
         -webkit-user-select: none;
+        -webkit-app-region: no-drag; /* 确保内容区不阻挡缩放/点击 */
       }
       .titlebar { display: none }
+
+      /* 右侧自定义缩放条：可拖动改变宽度 */
+      #edge-resizer-right {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: 8px;
+        height: 100%;
+        cursor: ew-resize;
+        -webkit-app-region: no-drag;
+        z-index: 9999;
+        /* 可选：半透明命中区，视觉上保持简洁 */
+        background: transparent;
+      }
     </style>
     <link rel="stylesheet" href="./css/header.css">
     <link rel="stylesheet" href="./css/phrases.css">
@@ -24,7 +39,7 @@
       <div class="btn" id="btn-settings" title="设置">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
           <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" stroke="currentColor" stroke-width="1.7" />
-          <path d="M19 12a7 7 0 0 0-.06-.9l1.94-1.5-1.9-3.29-2.27.92a7.08 7.08 0 0 0-1.56-.9L14.7 3h-5.4l-.45 2.33a7.08 7.08 0 0 0-1.56.9l-2.27-.92-1.9 3.29 1.94 1.5c.04-.3.06-.6.06-.9Z" stroke="currentColor" stroke-width="1.1" />
+          <path d="M19 12a7 7 0 0 0-.06-.9l1.94-1.5-1.9-3.29-2.27.92a7.08 7.08 0 0 0-1.56-.9L14.7 3h-5.4l-.45 2.33a7.08 7.08 0 0 0-1.56.9l-2.27-.92-1.9 3.29 1.94 1.5c.04-.3.06-.6.06-.9Z" stroke="currentColor" stroke-width="1.7" />
         </svg>
       </div>
       <div class="btn" id="btn-minimize" title="最小化">
@@ -81,10 +96,7 @@
           </div>
 
           <div class="aimodels-view">
-            <!-- 这个容器仅用于确定 BrowserView 的位置和尺寸 -->
             <div id="aimodels-host" class="aimodels-host"></div>
-
-            <!-- 兜底 iframe（当主进程不可用/加载失败时尝试） -->
             <iframe id="aimodels-fallback" hidden sandbox="allow-scripts allow-same-origin allow-forms allow-popups" referrerpolicy="no-referrer"></iframe>
           </div>
           <div class="aimodels-tip" id="aimodels-tip">若网页在本窗口加载异常，可点击“在浏览器打开”。</div>
@@ -123,10 +135,15 @@
     <div class="app-content">
       <!-- 你的内容区域 -->
     </div>
+
+    <!-- 右侧缩放条（不可见，仅用于命中拖动） -->
+    <div id="edge-resizer-right" aria-hidden="true"></div>
+
     <script src="./js/tabs.js"></script>
     <script src="./js/aimodels.js"></script>
     <script src="./js/ai.js"></script>
     <script src="./js/phrases.js"></script>
     <script src="./js/header.js"></script>
+    <script src="./js/resize.js"></script>
   </body>
 </html>
