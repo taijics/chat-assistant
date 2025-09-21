@@ -11,10 +11,17 @@ const {
 } = require('electron');
 const wechatMonitor = require('./wechatMonitor');
 const { registerAimodelsHandlers } = require('./main/aimodels');
-const { registerAiHandlers } = require('./main/ai-coze'); // 新增：Coze AI 接口
+const { registerAiHandlers } = require('./main/ai-coze');
 const { exec } = require('child_process');
-const { windowManager } = require('node-window-manager'); // 聚焦微信用
-const sendKeys = require('./utils/send-keys'); // 发送按键
+const { windowManager } = require('node-window-manager');
+const sendKeys = require('./utils/send-keys');
+
+// 禁用后台节流，避免隐藏/未聚焦时降频导致首屏慢
+try {
+  app.commandLine.appendSwitch('disable-renderer-backgrounding');
+  app.commandLine.appendSwitch('disable-background-timer-throttling');
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+} catch {}
 
 let mainWindow = null;
 let miniWindow = null;
@@ -23,12 +30,10 @@ let animationTimer = null;
 const LERP_SPEED = 0.22;
 const ANIMATION_INTERVAL = 16;
 
-// 可调宽度：变量保存，支持拖动
 const ASSISTANT_MIN_W = 260;
 const ASSISTANT_MAX_W = 1400;
 let assistWidth = 350;
 
-// 右侧贴边的小幅负偏移，避免高 DPI 下出现 1px 缝隙
 const DOCK_GAP_FIX_DIPS = 2;
 
 let current = { x: 0, y: 0, w: assistWidth, h: 600 };
@@ -37,60 +42,43 @@ let target  = { x: 0, y: 0, w: assistWidth, h: 600 };
 let userHidden = false;
 let wechatFound = false;
 let wechatHWND = null;
-let firstDirectPosition = false;
 let quitting = false;
-let pinnedAlwaysOnTop = false; // 置顶状态（默认关闭）
+let pinnedAlwaysOnTop = false;
 
-// 前台跟随定时器
 let fgFollowTimer = null;
 const FG_CHECK_INTERVAL = 250;
 
-// 记录最近一次实际应用到窗口的边界，避免重复 setBounds
 let lastAppliedBounds = null;
-// 记录最近一次同步的高度限制值，避免每帧 setMinimum/MaximumSize
 let lastConstraintH = null;
 
-// 贴靠兜底轮询（防止偶发丢事件时“脱钩”）
+// 贴靠兜底轮询
 let pollDockTimer = null;
 
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
+// 拖动结束误判保护：记录最近一次 position 事件时间
+let lastPositionAt = 0;
+
+function lerp(a, b, t) { return a + (b - a) * t; }
 
 function findDisplayForPhysicalRect(pxRect) {
   const displays = screen.getAllDisplays();
-  let best = displays[0];
-  let bestArea = -1;
+  let best = displays[0], bestArea = -1;
   for (const d of displays) {
-    const db = d.bounds;
-    const s = d.scaleFactor || 1;
-    const pb = {
-      x: Math.round(db.x * s),
-      y: Math.round(db.y * s),
-      width: Math.round(db.width * s),
-      height: Math.round(db.height * s)
-    };
+    const db = d.bounds, s = d.scaleFactor || 1;
+    const pb = { x: Math.round(db.x*s), y: Math.round(db.y*s), width: Math.round(db.width*s), height: Math.round(db.height*s) };
     const ix = Math.max(pb.x, pxRect.x);
     const iy = Math.max(pb.y, pxRect.y);
-    const ax = Math.min(pb.x + pb.width, pxRect.x + pxRect.width);
+    const ax = Math.min(pb.x + pb.width,  pxRect.x + pxRect.width);
     const ay = Math.min(pb.y + pb.height, pxRect.y + pxRect.height);
-    const w = Math.max(0, ax - ix);
-    const h = Math.max(0, ay - iy);
-    const area = w * h;
-    if (area > bestArea) {
-      bestArea = area;
-      best = d;
-    }
+    const area = Math.max(0, ax - ix) * Math.max(0, ay - iy);
+    if (area > bestArea) { bestArea = area; best = d; }
   }
   return best;
 }
 
-// 贴右；不够则贴左；高度与微信一致（DIP）
-// 右贴边时向左收 DOCK_GAP_FIX_DIPS 以消缝
 function dockToWeChatRightOrLeftPx(pxRect) {
   const display = findDisplayForPhysicalRect(pxRect);
   const s = display.scaleFactor || 1;
-  const wa = display.workArea; // DIP
+  const wa = display.workArea;
 
   const wechatLeftDip  = Math.floor(pxRect.x / s);
   const wechatRightDip = Math.floor((pxRect.x + pxRect.width) / s);
@@ -99,9 +87,9 @@ function dockToWeChatRightOrLeftPx(pxRect) {
 
   let nextX;
   if (wechatRightDip + assistWidth <= wa.x + wa.width) {
-    nextX = wechatRightDip - DOCK_GAP_FIX_DIPS; // 右贴
+    nextX = wechatRightDip - DOCK_GAP_FIX_DIPS;
   } else {
-    nextX = wechatLeftDip - assistWidth;        // 左贴
+    nextX = wechatLeftDip - assistWidth;
   }
 
   if (nextX < wa.x) nextX = wa.x;
@@ -114,7 +102,7 @@ function dockToWeChatRightOrLeftPx(pxRect) {
 function syncHeightConstraint(h) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const hh = Math.max(1, Math.round(h));
-  if (lastConstraintH === hh) return; // 仅在变化时同步，避免每帧刷新
+  if (lastConstraintH === hh) return;
   lastConstraintH = hh;
   mainWindow.setMinimumSize(ASSISTANT_MIN_W, hh);
   mainWindow.setMaximumSize(ASSISTANT_MAX_W, hh);
@@ -125,28 +113,27 @@ function createMainWindow() {
     width: current.w,
     height: current.h,
     frame: false,
-    resizable: true,          // 开启原生缩放
-    show: false,
+    resizable: true,
+    show: true,                 // 立即显示主窗
     transparent: false,
     titleBarStyle: 'hidden',
-    hasShadow: false,         // 关闭阴影，避免与微信间出现视觉缝隙
-    roundedCorners: false,    // Windows 11 圆角可能带来边缘空白
-    backgroundColor: '#ffffff', // 减少首屏黑/白闪
+    hasShadow: false,
+    roundedCorners: false,
+    backgroundColor: '#ffffff',
     minWidth: ASSISTANT_MIN_W,
     maxWidth: ASSISTANT_MAX_W,
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: false,
+      backgroundThrottling: false
     }
   });
   mainWindow.loadFile('renderer/index.html');
   registerAimodelsHandlers(mainWindow);
   registerAiHandlers(mainWindow);
 
-  // 初始同步一次高度限制
   syncHeightConstraint(current.h);
 
-  // 记住用户拖动后的宽度
   mainWindow.on('resize', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const b = mainWindow.getBounds();
@@ -158,13 +145,11 @@ function createMainWindow() {
     }
   });
 
-  // 键盘 Alt+D 开关 DevTools
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.alt && !input.control && !input.shift && String(input.key || '').toLowerCase() === 'd') {
       event.preventDefault();
       const wc = mainWindow.webContents;
-      if (wc.isDevToolsOpened()) wc.closeDevTools();
-      else wc.openDevTools({ mode: 'detach' });
+      if (wc.isDevToolsOpened()) wc.closeDevTools(); else wc.openDevTools({ mode: 'detach' });
     }
   });
 
@@ -176,8 +161,7 @@ function createMainWindow() {
 function toggleDevTools() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     const wc = mainWindow.webContents;
-    if (wc.isDevToolsOpened()) wc.closeDevTools();
-    else wc.openDevTools({ mode: 'detach' });
+    if (wc.isDevToolsOpened()) wc.closeDevTools(); else wc.openDevTools({ mode: 'detach' });
   }
 }
 
@@ -190,12 +174,13 @@ function createMiniWindow() {
     y: 20,
     frame: false,
     resizable: false,
-    show: true,
+    show: false,                // 启动不显示迷你窗
     alwaysOnTop: true,
     skipTaskbar: true,
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: false,
+      backgroundThrottling: false
     }
   });
   miniWindow.loadFile('renderer/mini.html');
@@ -216,7 +201,7 @@ function showMain() {
 function applyTargetImmediate() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   current = { ...target };
-  syncHeightConstraint(current.h); // 仅在高度变化时同步
+  syncHeightConstraint(current.h);
   const b = {
     x: Math.round(current.x),
     y: Math.round(current.y),
@@ -258,14 +243,11 @@ function startForegroundFollow() {
       const isWechatActive =
         Number(active.handle) === Number(wechatHWND) ||
         /微信|wechat/i.test(active.getTitle() || '');
-      if (isWechatActive) {
-        updateZOrder();
-      }
+      if (isWechatActive) updateZOrder();
     } catch {}
   }, FG_CHECK_INTERVAL);
 }
 
-// 兜底贴靠：每 400ms 主动对齐一次，避免偶发丢事件导致脱钩
 function startDockPoller() {
   if (pollDockTimer) clearInterval(pollDockTimer);
   pollDockTimer = setInterval(() => {
@@ -274,7 +256,7 @@ function startDockPoller() {
       const wins = windowManager.getWindows();
       const wx = wins.find(w => /微信|wechat/i.test(w.getTitle() || ''));
       if (!wx) return;
-      const b = wx.getBounds(); // 物理像素
+      const b = wx.getBounds();
       const next = dockToWeChatRightOrLeftPx({ x: b.x, y: b.y, width: b.width, height: b.height });
       const moved =
         Math.abs(next.x - target.x) >= 1 ||
@@ -298,21 +280,23 @@ function handleEvent(evt) {
       wechatFound = true;
       wechatHWND = hwnd;
       target = dockToWeChatRightOrLeftPx({ x, y, width, height });
-      applyTargetImmediate();                 // 立即贴靠
-      firstDirectPosition = true;
+      applyTargetImmediate();
       if (!userHidden) { showMain(); updateZOrder(); }
       break;
     case 'position':
-      if (!wechatFound) return;
+      wechatFound = true;
       target = dockToWeChatRightOrLeftPx({ x, y, width, height });
-      applyTargetImmediate();                 // 每次位置变化都立即对齐，确保“吸附”
+      applyTargetImmediate();
       if (!userHidden) { showMain(); updateZOrder(); }
+      lastPositionAt = Date.now(); // 记录拖动事件
+      break;
+    case 'minimized':
+      // 拖动结束误判保护：position 后 800ms 内的 minimized 忽略
+      if (Date.now() - lastPositionAt < 800) break;
+      if (!userHidden) showMini();
       break;
     case 'foreground':
       if (!userHidden) { showMain(); updateZOrder(); }
-      break;
-    case 'minimized':
-      if (!userHidden) { showMini(); }
       break;
     case 'restored':
       if (!userHidden) { showMain(); updateZOrder(); }
@@ -320,18 +304,15 @@ function handleEvent(evt) {
     case 'destroyed':
       wechatFound = false;
       wechatHWND = null;
-      firstDirectPosition = false;
       if (!userHidden) showMini();
       break;
   }
 }
 
 function startAnimationLoop() {
-  // 仅当确实有变化时 setBounds；达到目标后停止
   if (animationTimer) clearInterval(animationTimer);
-
-  const EPS = 0.6;       // 小于此阈值视为到位
-  const APPLY_DELTA = 1; // 边界变化达到 1px 才调用 setBounds
+  const EPS = 0.6;
+  const APPLY_DELTA = 1;
 
   animationTimer = setInterval(() => {
     if (quitting) return;
@@ -365,13 +346,11 @@ function startAnimationLoop() {
       return;
     }
 
-    // 插值推进
     current.x = lerp(current.x, target.x, LERP_SPEED);
     current.y = lerp(current.y, target.y, LERP_SPEED);
     current.w = lerp(current.w, target.w, LERP_SPEED);
     current.h = lerp(current.h, target.h, LERP_SPEED);
 
-    // 仅在高度变化时同步约束，避免每帧刷新最小/最大尺寸
     syncHeightConstraint(current.h);
 
     const newB = {
@@ -399,10 +378,9 @@ app.whenReady().then(() => {
   createMiniWindow();
   wechatMonitor.start({ keywords: [] }, handleEvent);
 
-  // 动画循环满足条件时会很快自停；不再每帧强制刷新边界
   startAnimationLoop();
   startForegroundFollow();
-  startDockPoller(); // 兜底贴靠，保证持续吸附
+  startDockPoller();
 
   const menu = Menu.buildFromTemplate([{
     label: 'Debug',
@@ -414,7 +392,6 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(menu);
 });
 
-// 最小化/恢复/退出
 ipcMain.on('close-main-window', () => { userHidden = true; showMini(); });
 ipcMain.on('restore-main-window', () => {
   userHidden = false;
@@ -423,24 +400,16 @@ ipcMain.on('restore-main-window', () => {
 });
 ipcMain.on('exit-app', () => { cleanupAndQuit(); });
 
-// DevTools 切换（来自渲染进程）
 ipcMain.on('devtools:toggle', () => { toggleDevTools(); });
 
-// 顶栏菜单动作
 ipcMain.on('toolbar:click', async (_e, action) => {
   switch (action) {
-    case 'new':
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:new-chat');
-      break;
-    case 'history':
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:show-history');
-      break;
+    case 'new':      mainWindow?.webContents.send('app:new-chat'); break;
+    case 'history':  mainWindow?.webContents.send('app:show-history'); break;
     case 'pin':
       pinnedAlwaysOnTop = !pinnedAlwaysOnTop;
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.setAlwaysOnTop(pinnedAlwaysOnTop, 'screen-saver');
-      }
-      if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('toolbar:pin-state', pinnedAlwaysOnTop);
       }
       if (!pinnedAlwaysOnTop) updateZOrder();
@@ -448,31 +417,16 @@ ipcMain.on('toolbar:click', async (_e, action) => {
     case 'screenshot':
       exec('explorer.exe ms-screenclip:', (err) => { if (err) exec('snippingtool /clip'); });
       break;
-    case 'search':
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:search');
-      break;
-    case 'clear':
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:clear-chat');
-      break;
-    case 'export':
-      await handleExport();
-      break;
-    case 'settings':
-      openSettingsWindow();
-      break;
-    case 'about':
-      showAbout();
-      break;
-    case 'minimize':
-      userHidden = true; showMini();
-      break;
-    case 'exit':
-      cleanupAndQuit();
-      break;
+    case 'search':   mainWindow?.webContents.send('app:search'); break;
+    case 'clear':    mainWindow?.webContents.send('app:clear-chat'); break;
+    case 'export':   await handleExport(); break;
+    case 'settings': openSettingsWindow(); break;
+    case 'about':    showAbout(); break;
+    case 'minimize': userHidden = true; showMini(); break;
+    case 'exit':     cleanupAndQuit(); break;
   }
 });
 
-// 右侧自定义缩放：渲染进程把新宽度传上来
 ipcMain.handle('window:get-bounds', () => {
   if (!mainWindow || mainWindow.isDestroyed()) return null;
   return mainWindow.getBounds();
@@ -491,7 +445,6 @@ ipcMain.on('window:resize-width', (_e, newWidth) => {
   } catch {}
 });
 
-// 话术粘贴
 ipcMain.on('phrase:paste', async (_e, text) => {
   try {
     if (!text) return;
@@ -654,9 +607,7 @@ function showAbout() {
     detail: `Electron ${v.electron}\nChromium ${v.chrome}\nNode ${v.node}\nV8 ${v.v8}`,
     buttons: ['确定', '开源主页']
   }).then(res => {
-    if (res.response === 1) {
-      shell.openExternal('https://github.com/');
-    }
+    if (res.response === 1) shell.openExternal('https://github.com/');
   });
 }
 

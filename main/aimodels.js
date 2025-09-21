@@ -1,12 +1,28 @@
 // main/aimodels.js
 // 在主进程中注册 BrowserView 相关的 IPC 处理（多实例池 + 持久保留会话）
-const { BrowserView, ipcMain, shell } = require('electron');
+const { BrowserView, ipcMain, shell, app } = require('electron');
 
 const CHROME_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ' +
   'Chrome/124.0.0.0 Safari/537.36';
 
 function registerAimodelsHandlers(mainWindow) {
+  // 允许通过环境变量/命令行完全禁用 AI 模型（用于快速定位问题）
+  const AIMODELS_DISABLED =
+    String(process.env.DISABLE_AIMODELS || '').trim() === '1' ||
+    (app && app.commandLine && app.commandLine.hasSwitch('disable-aimodels'));
+
+  if (AIMODELS_DISABLED) {
+    console.warn('[aimodels] disabled by flag (DISABLE_AIMODELS=1 or --disable-aimodels).');
+    // 注册 minimal 的空 handler，避免渲染端调用时报错
+    ipcMain.handle('aimodels:switch', async () => ({ ok: true }));
+    ipcMain.handle('aimodels:resize', async () => ({ ok: true }));
+    ipcMain.handle('aimodels:detach', async () => ({ ok: true }));
+    ipcMain.handle('aimodels:destroyAll', async () => ({ ok: true }));
+    ipcMain.handle('aimodels:openExternal', async () => ({ ok: true }));
+    return;
+  }
+
   // 按站点（origin）缓存多个 BrowserView
   const pool = new Map(); // key: origin, value: { view: BrowserView, origin: string, firstUrl: string }
   let currentKey = null;   // 当前附着在窗口上的 view key（origin）
@@ -32,7 +48,7 @@ function registerAimodelsHandlers(mainWindow) {
     // UA 伪装：去掉 Electron 标识，使用标准 Chrome UA
     try { view.webContents.setUserAgent(CHROME_UA); } catch {}
 
-    // 请求头补齐：提高兼容性（仍不能保证绕过风控/地区限制）
+    // 请求头补齐：提高兼容性
     try {
       const ses = view.webContents.session;
       ses.webRequest.onBeforeSendHeaders((details, callback) => {
@@ -62,7 +78,6 @@ function registerAimodelsHandlers(mainWindow) {
       return { key, view: pool.get(key).view, existed: true };
     }
     const view = createView(url);
-    // 首次加载
     await view.webContents.loadURL(url, {
       userAgent: CHROME_UA,
       httpReferrer: new URL(url).origin + '/',
@@ -74,22 +89,17 @@ function registerAimodelsHandlers(mainWindow) {
   function attach(key) {
     const item = pool.get(key);
     if (!item) return false;
-    // 先把当前 view 摘掉
     if (currentKey && pool.get(currentKey)) {
       try {
         const cur = pool.get(currentKey).view;
-        // 摘掉前静音
         try { cur.webContents.setAudioMuted(true); } catch {}
         mainWindow.removeBrowserView(cur);
       } catch {}
     }
-    // 附加新 view
     try {
       const v = item.view;
       mainWindow.setBrowserView(v);
-      // 激活时取消静音
       try { v.webContents.setAudioMuted(false); } catch {}
-      // 应用最近的 bounds
       v.setBounds({
         x: Math.max(0, Math.round(lastBounds.x)),
         y: Math.max(0, Math.round(lastBounds.y)),
@@ -99,9 +109,7 @@ function registerAimodelsHandlers(mainWindow) {
       v.setAutoResize({ width: false, height: false });
       currentKey = key;
       return true;
-    } catch {
-      return false;
-    }
+    } catch { return false; }
   }
 
   function detachActive() {
@@ -110,7 +118,6 @@ function registerAimodelsHandlers(mainWindow) {
     if (!item) { currentKey = null; return false; }
     try {
       const v = item.view;
-      // 摘除但不销毁，保持会话和页面状态
       try { v.webContents.setAudioMuted(true); } catch {}
       mainWindow.removeBrowserView(v);
     } catch {}
@@ -118,7 +125,6 @@ function registerAimodelsHandlers(mainWindow) {
     return true;
   }
 
-  // 切换/首建：根据 URL 的 origin 作为 key
   ipcMain.handle('aimodels:switch', async (_e, { url }) => {
     if (!mainWindow) throw new Error('no main window');
     if (!/^https?:\/\//i.test(url)) throw new Error('invalid url');
@@ -127,11 +133,10 @@ function registerAimodelsHandlers(mainWindow) {
     return { ok: true };
   });
 
-  // 调整当前显示中的 BrowserView 尺寸/位置
   ipcMain.handle('aimodels:resize', (_e, { bounds }) => {
     if (!mainWindow || !bounds) return { ok: false };
     lastBounds = { ...bounds };
-    if (!currentKey) return { ok: true }; // 暂未附加时仅记录
+    if (!currentKey) return { ok: true };
     const item = pool.get(currentKey);
     if (!item) return { ok: false };
     try {
@@ -142,18 +147,14 @@ function registerAimodelsHandlers(mainWindow) {
         height: Math.max(0, Math.round(bounds.height)),
       });
       return { ok: true };
-    } catch {
-      return { ok: false };
-    }
+    } catch { return { ok: false }; }
   });
 
-  // 离开“AI模型”选项卡：仅摘掉，不销毁
   ipcMain.handle('aimodels:detach', () => {
     const ok = detachActive();
     return { ok };
   });
 
-  // 可选：销毁全部（如果你在设置里提供“释放内存”按钮时调用）
   ipcMain.handle('aimodels:destroyAll', () => {
     try {
       detachActive();
@@ -162,12 +163,9 @@ function registerAimodelsHandlers(mainWindow) {
       }
       pool.clear();
       return { ok: true };
-    } catch {
-      return { ok: false };
-    }
+    } catch { return { ok: false }; }
   });
 
-  // 外部打开：如未传 url，使用当前活动视图的 URL
   ipcMain.handle('aimodels:openExternal', async (_e, { url }) => {
     let toOpen = url;
     if (!toOpen && currentKey && pool.get(currentKey)) {

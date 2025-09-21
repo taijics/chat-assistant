@@ -12,15 +12,16 @@ const {
 
 const fs = require('fs');
 const path = require('path');
+const { exec } = require('child_process');
 
-// 禁用后台节流，确保窗口即使未聚焦/刚启动时也不被降频
+let lastAppliedBounds = null;
+
+// 关闭后台节流，避免主窗隐藏或未聚焦时渲染降频
 try {
   app.commandLine.appendSwitch('disable-renderer-backgrounding');
   app.commandLine.appendSwitch('disable-background-timer-throttling');
   app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 } catch {}
-
-let lastAppliedBounds = null;
 
 let wechatMonitor;
 (function resolveWechatMonitor() {
@@ -39,7 +40,7 @@ let wechatMonitor;
   wechatMonitor = { start: () => {}, stop: () => {}, setZOrder: () => {} };
 })();
 
-let registerAimodelsHandlers = () => {};
+let { registerAimodelsHandlers } = require('./aimodels');
 try { ({ registerAimodelsHandlers } = require('./aimodels')); } catch {}
 
 let registerAiHandlers = () => {};
@@ -47,8 +48,6 @@ try { ({ registerAiHandlers } = require('./ai-coze')); } catch {}
 
 let sendKeys = { sendCtrlV() {}, sendEnter() {} };
 try { sendKeys = require('../utils/send-keys'); } catch { try { sendKeys = require('./utils/send-keys'); } catch {} }
-
-const { exec } = require('child_process');
 
 let windowManager = null;
 try {
@@ -91,17 +90,15 @@ let lastPositionAt = 0; // 记录最近一次 position 事件时间戳
 let fgFollowTimer = null;
 const FG_CHECK_INTERVAL = 250;
 
-// 兜底贴靠轮询，防止偶发丢事件导致“脱钩”
+// 兜底贴靠轮询
 let dockPollTimer = null;
 const DOCK_POLL_INTERVAL = 400;
 
-/* ---- 宽度持久化（settings.json） ---- */
+/* ---- settings.json 持久化 ---- */
 const CONFIG_FILE_NAME = 'settings.json';
 let saveTimer = null;
 
-function getConfigPath() {
-  return path.join(app.getPath('userData'), CONFIG_FILE_NAME);
-}
+function getConfigPath() { return path.join(app.getPath('userData'), CONFIG_FILE_NAME); }
 function loadConfig() {
   try {
     const p = getConfigPath();
@@ -113,9 +110,7 @@ function loadConfig() {
       target.w  = assistWidth;
       console.log('[config] assistWidth restored:', assistWidth);
     }
-  } catch (e) {
-    console.warn('[config] load failed:', e.message);
-  }
+  } catch (e) { console.warn('[config] load failed:', e.message); }
 }
 function saveConfig() {
   try {
@@ -123,15 +118,13 @@ function saveConfig() {
     const payload = { assistWidth };
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p, JSON.stringify(payload, null, 2), 'utf8');
-  } catch (e) {
-    console.warn('[config] save failed:', e.message);
-  }
+  } catch (e) { console.warn('[config] save failed:', e.message); }
 }
 function scheduleSaveConfig() {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { saveTimer = null; saveConfig(); }, 250);
 }
-/* ------------------------------------ */
+/* -------------------------------- */
 
 function findDisplayForPhysicalRect(pxRect) {
   const displays = screen.getAllDisplays();
@@ -153,7 +146,6 @@ function pxToDipRect(pxRect) {
   const s = d.scaleFactor || 1;
   return { x: Math.round(pxRect.x / s), y: Math.round(pxRect.y / s), width: Math.round(pxRect.width / s), height: Math.round(pxRect.height / s), display: d };
 }
-
 function computeDockX(pxRect, width) {
   const display = findDisplayForPhysicalRect(pxRect);
   const s = display.scaleFactor || 1;
@@ -163,11 +155,8 @@ function computeDockX(pxRect, width) {
   const wechatRightDip = Math.floor((pxRect.x + pxRect.width) / s);
 
   let nextX;
-  if (wechatRightDip + width <= wa.x + wa.width) {
-    nextX = wechatRightDip - DOCK_GAP_FIX_DIPS;
-  } else {
-    nextX = wechatLeftDip - width;
-  }
+  if (wechatRightDip + width <= wa.x + wa.width) nextX = wechatRightDip - DOCK_GAP_FIX_DIPS;
+  else nextX = wechatLeftDip - width;
 
   if (nextX < wa.x) nextX = wa.x;
   const maxX = wa.x + wa.width - width;
@@ -268,7 +257,6 @@ function toggleDevTools() {
   }
 }
 
-// 主窗口：改为立即显示 + 禁用后台节流
 function createMainWindow() {
    mainWindow = new BrowserWindow({
       width: assistWidth,
@@ -276,7 +264,7 @@ function createMainWindow() {
       frame: true,
       autoHideMenuBar: false,
       resizable: false,
-      show: true,                    // 立即显示，避免首屏隐藏导致节流
+      show: true,                    // 关键：启动即显示主窗
       transparent: false,
       backgroundColor: '#ffffff',
       useContentSize: true,
@@ -285,7 +273,7 @@ function createMainWindow() {
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
-        backgroundThrottling: false  // 渲染端不节流
+        backgroundThrottling: false // 关键：渲染端不节流
       }
     });
 
@@ -316,8 +304,7 @@ function createMainWindow() {
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.alt && !input.control && !input.shift && String(input.key || '').toLowerCase() === 'd') {
-      event.preventDefault();
-      toggleDevTools();
+      event.preventDefault(); toggleDevTools();
     }
   });
 
@@ -326,7 +313,7 @@ function createMainWindow() {
   });
 }
 
-// 迷你窗：启动时不显示，避免与主窗并存
+// 迷你窗：启动不显示
 function createMiniWindow() {
   const { width } = screen.getPrimaryDisplay().workAreaSize;
   miniWindow = new BrowserWindow({
@@ -336,7 +323,7 @@ function createMiniWindow() {
     y: 20,
     frame: false,
     resizable: false,
-    show: false, // 改为初始不显示
+    show: false,                    // 关键：启动不显示迷你窗
     alwaysOnTop: true,
     skipTaskbar: true,
     webPreferences: { nodeIntegration: true, contextIsolation: false, backgroundThrottling: false }
@@ -398,7 +385,25 @@ function startForegroundFollow() {
   }, FG_CHECK_INTERVAL);
 }
 
-// 新增：兜底贴靠轮询
+// 启动主动贴靠：即使监控没发 found/position，也先对齐一次
+function initialDockTry() {
+  try {
+    const wins = windowManager.getWindows();
+    const wx = wins.find(w => /微信|wechat/i.test(w.getTitle() || ''));
+    if (!wx) return;
+    const b = wx.getBounds();
+    const nextX = computeDockX(b, assistWidth);
+    const dip = pxToDipRect(b);
+    target = { x: nextX, y: dip.y, w: assistWidth, h: Math.max(dip.height, MIN_HEIGHT) };
+    applyTargetImmediate();
+    wechatFound = true;
+    wechatHWND = Number(wx.handle);
+    showMain();
+    updateZOrder();
+  } catch {}
+}
+
+// 兜底贴靠：事件丢失也会持续对齐
 function startDockPoller() {
   if (dockPollTimer) clearInterval(dockPollTimer);
   dockPollTimer = setInterval(() => {
@@ -407,20 +412,11 @@ function startDockPoller() {
       const wins = windowManager.getWindows();
       const wx = wins.find(w => /微信|wechat/i.test(w.getTitle() || ''));
       if (!wx) return;
-      const b = wx.getBounds(); // 物理像素
+      const b = wx.getBounds();
       const nextX = computeDockX(b, assistWidth);
       const dip = pxToDipRect(b);
-      const next = {
-        x: nextX,
-        y: dip.y,
-        w: assistWidth,
-        h: Math.max(dip.height, MIN_HEIGHT)
-      };
-      const moved =
-        Math.abs(next.x - target.x) >= 1 ||
-        Math.abs(next.y - target.y) >= 1 ||
-        Math.abs(next.w - target.w) >= 1 ||
-        Math.abs(next.h - target.h) >= 1;
+      const next = { x: nextX, y: dip.y, w: assistWidth, h: Math.max(dip.height, MIN_HEIGHT) };
+      const moved = Math.abs(next.x - target.x) >= 1 || Math.abs(next.y - target.y) >= 1 || Math.abs(next.w - target.w) >= 1 || Math.abs(next.h - target.h) >= 1;
       if (moved) {
         target = next;
         applyTargetImmediate();
@@ -438,47 +434,38 @@ function handleEvent(evt) {
     case 'found': {
       wechatFound = true; wechatHWND = hwnd;
       lastWechatPxRect = { x, y, width, height };
-
       const dockX = computeDockX(lastWechatPxRect, assistWidth);
       const dip   = pxToDipRect(lastWechatPxRect);
-      target = {
-        x: dockX,
-        y: dip.y,
-        w: assistWidth,
-        h: Math.max(dip.height, MIN_HEIGHT)
-      };
-      applyTargetImmediate();
-      if (!userHidden) { showMain(); updateZOrder(); }
+      target = { x: dockX, y: dip.y, w: assistWidth, h: Math.max(dip.height, MIN_HEIGHT) };
+      applyTargetImmediate();              // 立即贴靠
+      showMain(); updateZOrder();
       break;
     }
     case 'position': {
-      wechatFound = true;
+      wechatFound = true; wechatHWND = hwnd || wechatHWND;
       lastWechatPxRect = { x, y, width, height };
-
       const dockX = computeDockX(lastWechatPxRect, assistWidth);
       const dip   = pxToDipRect(lastWechatPxRect);
       target.x = dockX;
       target.y = dip.y;
       target.h = Math.max(dip.height, MIN_HEIGHT);
       target.w = assistWidth;
-
-      // 每次位置变化都立即贴靠，确保“吸附”
-      applyTargetImmediate();
-      if (!userHidden) { showMain(); updateZOrder(); }
+      applyTargetImmediate();              // 每次都即时贴靠
+      showMain(); updateZOrder();
       lastPositionAt = Date.now();
       break;
     }
     case 'minimized': {
-      // 拖动结束防抖：position 后很短时间内的 minimized 多为误判，忽略
+      // 拖动结束误判保护：position 后 800ms 内忽略 minimized
       if (Date.now() - lastPositionAt < 800) break;
       if (!userHidden) showMini();
       break;
     }
     case 'foreground':
-      if (!userHidden) { showMain(); updateZOrder(); }
+      showMain(); updateZOrder();
       break;
     case 'restored':
-      if (!userHidden) { showMain(); updateZOrder(); }
+      showMain(); updateZOrder();
       break;
     case 'destroyed':
       wechatFound = false; wechatHWND = null; lastWechatPxRect = null;
@@ -487,12 +474,9 @@ function handleEvent(evt) {
   }
 }
 
-// 动画循环：仅当确实有变化时 setBounds；达到目标后停止
 function startAnimationLoop() {
   if (animationTimer) clearInterval(animationTimer);
-
-  const EPS = 0.6; // 到目标小于 0.6px 视为到位
-  const APPLY_DELTA = 1; // 只有在>=1px 变化时才 setBounds
+  const EPS = 0.6, APPLY_DELTA = 1;
 
   animationTimer = setInterval(() => {
     if (quitting) return;
@@ -517,13 +501,8 @@ function startAnimationLoop() {
         finalB.y !== lastAppliedBounds.y ||
         finalB.width !== lastAppliedBounds.width ||
         finalB.height !== lastAppliedBounds.height;
-      if (changed) {
-        try { mainWindow.setBounds(finalB); lastAppliedBounds = finalB; } catch {}
-      }
-
-      clearInterval(animationTimer);
-      animationTimer = null;
-      return;
+      if (changed) { try { mainWindow.setBounds(finalB); lastAppliedBounds = finalB; } catch {} }
+      clearInterval(animationTimer); animationTimer = null; return;
     }
 
     current.x = lerp(current.x, target.x, LERP_SPEED);
@@ -545,9 +524,7 @@ function startAnimationLoop() {
       Math.abs(newB.width - lastAppliedBounds.width) >= APPLY_DELTA ||
       Math.abs(newB.height - lastAppliedBounds.height) >= APPLY_DELTA;
 
-    if (deltaBigEnough) {
-      try { mainWindow.setBounds(newB); lastAppliedBounds = newB; } catch {}
-    }
+    if (deltaBigEnough) { try { mainWindow.setBounds(newB); lastAppliedBounds = newB; } catch {} }
   }, ANIMATION_INTERVAL);
 }
 
@@ -557,11 +534,14 @@ app.whenReady().then(() => {
   createMainWindow();
   createMiniWindow();
 
+  // 启动即主动贴靠一次（即使监控还没发事件）
+  initialDockTry();
+
   try { wechatMonitor.start({ keywords: [] }, handleEvent); } catch (e) { console.warn('[wechatMonitor] start failed:', e.message); }
 
   startAnimationLoop();
   startForegroundFollow();
-  startDockPoller(); // 新增：兜底贴靠，保证持续吸附
+  startDockPoller(); // 兜底贴靠
 });
 
 ipcMain.on('close-main-window', () => { userHidden = true; showMini(); });
@@ -573,7 +553,6 @@ ipcMain.on('exit-app', () => { cleanupAndQuit(); });
 
 ipcMain.on('devtools:toggle', () => toggleDevTools());
 
-// 来自渲染端旧“菜单”的动作仍保留兼容
 ipcMain.on('toolbar:click', async (_e, action) => {
   switch (action) {
     case 'new':      mainWindow?.webContents.send('app:new-chat'); break;
@@ -599,7 +578,7 @@ ipcMain.on('toolbar:click', async (_e, action) => {
   }
 });
 
-// 自定义右侧缩放：渲染进程把新宽度传上来
+// 自定义右侧缩放
 ipcMain.handle('window:get-bounds', () => {
   if (!mainWindow || mainWindow.isDestroyed()) return null;
   return mainWindow.getBounds();
@@ -629,7 +608,7 @@ ipcMain.on('window:resize-width', (_e, newWidth) => {
   scheduleSaveConfig();
 });
 
-// 话术：粘贴（单击）
+// 话术：粘贴（单击/双击）
 ipcMain.on('phrase:paste', async (_e, text) => {
   try {
     if (!text) return;
@@ -638,8 +617,6 @@ ipcMain.on('phrase:paste', async (_e, text) => {
     setTimeout(() => { try { sendKeys.sendCtrlV(); } catch {} if (!pinnedAlwaysOnTop) updateZOrder(); }, 120);
   } catch (err) { console.error('phrase paste failed:', err); }
 });
-
-// 粘贴并发送（双击）
 ipcMain.on('phrase:paste-send', async (_e, text) => {
   try {
     if (!text) return;
