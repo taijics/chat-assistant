@@ -51,3 +51,4 @@ Thumbs.db
 
 # misc
 *.tgznode_modules/
+main/ai-coze.config.local.js

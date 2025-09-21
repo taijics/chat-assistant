@@ -1,18 +1,78 @@
 {
   "name": "chat-assistant",
   "version": "1.0.0",
-  "main": "main.js",
-  "description": "Electron WeChat assistant with native event hook (no ffi-napi)",
+  "description": "微信聊天助手",
+  "author": "Your Name",
+  "main": "main/index.js",
   "scripts": {
-    "start": "set NODE_OPTIONS= && electron .",
-    "rebuild": "npx electron-rebuild -f -w wechat_monitor"
+    "start": "electron .",
+    "postinstall": "electron-builder install-app-deps",
+    "rebuild": "electron-rebuild -f -w node-window-manager",
+    "build:win": "set CSC_IDENTITY_AUTO_DISCOVERY=false && set ELECTRON_BUILDER_DISABLE_CODE_SIGNING=true && electron-builder --win",
+    "build:win:portable": "set CSC_IDENTITY_AUTO_DISCOVERY=false && set ELECTRON_BUILDER_DISABLE_CODE_SIGNING=true && electron-builder --win portable",
+    "build:win:nsis": "set CSC_IDENTITY_AUTO_DISCOVERY=false && set ELECTRON_BUILDER_DISABLE_CODE_SIGNING=true && electron-builder --win nsis",
+    "build:dir": "set CSC_IDENTITY_AUTO_DISCOVERY=false && set ELECTRON_BUILDER_DISABLE_CODE_SIGNING=true && electron-builder --win dir",
+    "clean:cache": "powershell -NoProfile -Command \"Remove-Item -Recurse -Force \\\"$env:LOCALAPPDATA\\electron-builder\\Cache\\winCodeSign\\\" -ErrorAction SilentlyContinue\""
   },
-  "dependencies": {
-    "node-window-manager": "^2.2.4"
+  "build": {
+    "appId": "com.wxchat.chatassistant",
+    "productName": "微信聊天助手",
+    "directories": {
+      "buildResources": "app-build",
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!**/.git/**",
+      "!**/.vscode/**",
+      "!**/node_modules/**/test{,s}/**",
+      "!**/*.map",
+      "!**/*.md",
+      "!**/*.ts",
+      "!**/README*",
+      "!**/LICENSE*"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "app-build/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "${productName}-${version}-nsis-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable-${arch}.${ext}"
+    },
+    "extraResources": [
+      {
+        "from": "app-build/extra-resources/",
+        "to": "extra",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
   },
   "devDependencies": {
-    "electron": "^38.1.2",
-    "electron-rebuild": "^3.2.9",
-    "node-addon-api": "^7.1.0"
+    "@electron/rebuild": "^4.0.1",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "node-window-manager": "^2.2.4",
+    "extract-file-icon": "^0.3.2"
   }
 }
