@@ -13,6 +13,13 @@ const {
 const fs = require('fs');
 const path = require('path');
 
+// 禁用后台节流，确保窗口即使未聚焦/刚启动时也不被降频
+try {
+  app.commandLine.appendSwitch('disable-renderer-backgrounding');
+  app.commandLine.appendSwitch('disable-background-timer-throttling');
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+} catch {}
+
 let lastAppliedBounds = null;
 
 let wechatMonitor;
@@ -75,14 +82,18 @@ let target  = { x: 0, y: 0, w: assistWidth, h: 600 };
 let userHidden = false;
 let wechatFound = false;
 let wechatHWND = null;
-let firstDirectPosition = false;
 let quitting = false;
 let pinnedAlwaysOnTop = false;
 
 let lastWechatPxRect = null;
+let lastPositionAt = 0; // 记录最近一次 position 事件时间戳
 
 let fgFollowTimer = null;
 const FG_CHECK_INTERVAL = 250;
+
+// 兜底贴靠轮询，防止偶发丢事件导致“脱钩”
+let dockPollTimer = null;
+const DOCK_POLL_INTERVAL = 400;
 
 /* ---- 宽度持久化（settings.json） ---- */
 const CONFIG_FILE_NAME = 'settings.json';
@@ -164,41 +175,6 @@ function computeDockX(pxRect, width) {
   return nextX;
 }
 
-/* function createMainWindow() {
-  mainWindow = new BrowserWindow({
-    width: assistWidth,
-    height: current.h,
-    frame: true,
-    autoHideMenuBar: false,
-    resizable: false,
-    show: false,
-    transparent: false,
-    minWidth: ASSISTANT_MIN_W,
-    minHeight: MIN_HEIGHT,
-    webPreferences: { nodeIntegration: true, contextIsolation: false }
-  });
-
-  try { mainWindow.setHasShadow(false); } catch {}
-
-  // 中文菜单（含设置与常用功能）
-  buildAppMenu();
-
-  mainWindow.loadFile(pathJoin(__dirname, '../renderer/index.html'));
-
-  try { registerAimodelsHandlers(mainWindow); } catch {}
-  try { registerAiHandlers(mainWindow); } catch {}
-
-  mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.type === 'keyDown' && input.alt && !input.control && !input.shift && String(input.key || '').toLowerCase() === 'd') {
-      event.preventDefault(); toggleDevTools();
-    }
-  });
-
-  mainWindow.webContents.on('did-finish-load', () => {
-    try { mainWindow.webContents.send('toolbar:pin-state', pinnedAlwaysOnTop); } catch {}
-  });
-}
- */
 function buildAppMenu() {
   const template = [
     {
@@ -235,8 +211,6 @@ function buildAppMenu() {
         { role: 'resetZoom', label: '实际大小' },
         { role: 'zoomIn', label: '放大' },
         { role: 'zoomOut', label: '缩小' },
-        { type: 'separator' },
-        { role: 'togglefullscreen', label: '切换全屏' },
         { type: 'separator' },
         { label: '开发者工具', accelerator: 'Alt+D', click: toggleDevTools }
       ]
@@ -294,7 +268,7 @@ function toggleDevTools() {
   }
 }
 
-// REPLACE the whole createMainWindow function with this:
+// 主窗口：改为立即显示 + 禁用后台节流
 function createMainWindow() {
    mainWindow = new BrowserWindow({
       width: assistWidth,
@@ -302,29 +276,27 @@ function createMainWindow() {
       frame: true,
       autoHideMenuBar: false,
       resizable: false,
-      show: false,
+      show: true,                    // 立即显示，避免首屏隐藏导致节流
       transparent: false,
-      backgroundColor: '#ffffff',     // 新增：减少黑屏/白屏闪烁
-      useContentSize: true,           // 可选：按内容计算尺寸，避免非必要的往返
+      backgroundColor: '#ffffff',
+      useContentSize: true,
       minWidth: ASSISTANT_MIN_W,
       minHeight: MIN_HEIGHT,
       webPreferences: {
         nodeIntegration: true,
-        contextIsolation: false
+        contextIsolation: false,
+        backgroundThrottling: false  // 渲染端不节流
       }
     });
 
   try { mainWindow.setHasShadow(false); } catch {}
 
-  // 中文菜单（含设置与常用功能）
   buildAppMenu();
 
-  // 让原生右上角按钮具备“最小化到迷你窗”和“退出”的行为
-  // 注意：minimize 事件不可阻止，这里在触发后隐藏主窗并显示迷你窗
+  // 原生最小化到迷你窗
   mainWindow.on('minimize', () => {
     if (quitting) return;
     userHidden = true;
-    // 在下一轮事件循环隐藏主窗，避免闪烁
     setImmediate(() => {
       try { mainWindow.hide(); } catch {}
       showMini();
@@ -332,9 +304,9 @@ function createMainWindow() {
   });
 
   mainWindow.on('close', (e) => {
-    if (quitting) return;     // 若已进入退出流程，放行
-    e.preventDefault();       // 拦截系统关闭
-    cleanupAndQuit();         // 你的统一退出逻辑
+    if (quitting) return;
+    e.preventDefault();
+    cleanupAndQuit();
   });
 
   mainWindow.loadFile(pathJoin(__dirname, '../renderer/index.html'));
@@ -354,7 +326,7 @@ function createMainWindow() {
   });
 }
 
-// REPLACE the whole createMiniWindow function with this (注意：不要在里面再定义 createMainWindow 了):
+// 迷你窗：启动时不显示，避免与主窗并存
 function createMiniWindow() {
   const { width } = screen.getPrimaryDisplay().workAreaSize;
   miniWindow = new BrowserWindow({
@@ -364,10 +336,10 @@ function createMiniWindow() {
     y: 20,
     frame: false,
     resizable: false,
-    show: true,
+    show: false, // 改为初始不显示
     alwaysOnTop: true,
     skipTaskbar: true,
-    webPreferences: { nodeIntegration: true, contextIsolation: false }
+    webPreferences: { nodeIntegration: true, contextIsolation: false, backgroundThrottling: false }
   });
   miniWindow.loadFile(pathJoin(__dirname, '../renderer/mini.html'));
 }
@@ -393,8 +365,16 @@ function applyTargetImmediate() {
     height: Math.round(current.h)
   };
   try {
-    mainWindow.setBounds(b);
-    lastAppliedBounds = b;
+    if (
+      !lastAppliedBounds ||
+      b.x !== lastAppliedBounds.x ||
+      b.y !== lastAppliedBounds.y ||
+      b.width !== lastAppliedBounds.width ||
+      b.height !== lastAppliedBounds.height
+    ) {
+      mainWindow.setBounds(b);
+      lastAppliedBounds = b;
+    }
   } catch {}
 }
 
@@ -418,6 +398,38 @@ function startForegroundFollow() {
   }, FG_CHECK_INTERVAL);
 }
 
+// 新增：兜底贴靠轮询
+function startDockPoller() {
+  if (dockPollTimer) clearInterval(dockPollTimer);
+  dockPollTimer = setInterval(() => {
+    if (quitting || userHidden) return;
+    try {
+      const wins = windowManager.getWindows();
+      const wx = wins.find(w => /微信|wechat/i.test(w.getTitle() || ''));
+      if (!wx) return;
+      const b = wx.getBounds(); // 物理像素
+      const nextX = computeDockX(b, assistWidth);
+      const dip = pxToDipRect(b);
+      const next = {
+        x: nextX,
+        y: dip.y,
+        w: assistWidth,
+        h: Math.max(dip.height, MIN_HEIGHT)
+      };
+      const moved =
+        Math.abs(next.x - target.x) >= 1 ||
+        Math.abs(next.y - target.y) >= 1 ||
+        Math.abs(next.w - target.w) >= 1 ||
+        Math.abs(next.h - target.h) >= 1;
+      if (moved) {
+        target = next;
+        applyTargetImmediate();
+        if (!userHidden) { showMain(); updateZOrder(); }
+      }
+    } catch {}
+  }, DOCK_POLL_INTERVAL);
+}
+
 function handleEvent(evt) {
   if (quitting) return;
   const { type, x, y, width, height, hwnd } = evt;
@@ -436,12 +448,11 @@ function handleEvent(evt) {
         h: Math.max(dip.height, MIN_HEIGHT)
       };
       applyTargetImmediate();
-      firstDirectPosition = true;
       if (!userHidden) { showMain(); updateZOrder(); }
       break;
     }
     case 'position': {
-      if (!wechatFound) return;
+      wechatFound = true;
       lastWechatPxRect = { x, y, width, height };
 
       const dockX = computeDockX(lastWechatPxRect, assistWidth);
@@ -451,29 +462,33 @@ function handleEvent(evt) {
       target.h = Math.max(dip.height, MIN_HEIGHT);
       target.w = assistWidth;
 
-      if (!firstDirectPosition) { applyTargetImmediate(); firstDirectPosition = true; }
+      // 每次位置变化都立即贴靠，确保“吸附”
+      applyTargetImmediate();
       if (!userHidden) { showMain(); updateZOrder(); }
+      lastPositionAt = Date.now();
+      break;
+    }
+    case 'minimized': {
+      // 拖动结束防抖：position 后很短时间内的 minimized 多为误判，忽略
+      if (Date.now() - lastPositionAt < 800) break;
+      if (!userHidden) showMini();
       break;
     }
     case 'foreground':
       if (!userHidden) { showMain(); updateZOrder(); }
       break;
-    case 'minimized':
-      if (!userHidden) showMini();
-      break;
     case 'restored':
       if (!userHidden) { showMain(); updateZOrder(); }
       break;
     case 'destroyed':
-      wechatFound = false; wechatHWND = null; lastWechatPxRect = null; firstDirectPosition = false;
+      wechatFound = false; wechatHWND = null; lastWechatPxRect = null;
       if (!userHidden) showMini();
       break;
   }
 }
 
-// 用这个替换原来的 startAnimationLoop 实现
+// 动画循环：仅当确实有变化时 setBounds；达到目标后停止
 function startAnimationLoop() {
-  // 若已有循环，先停掉
   if (animationTimer) clearInterval(animationTimer);
 
   const EPS = 0.6; // 到目标小于 0.6px 视为到位
@@ -483,14 +498,12 @@ function startAnimationLoop() {
     if (quitting) return;
     if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
 
-    // 是否还有要移动/缩放
     const needMove =
       Math.abs(current.x - target.x) > EPS ||
       Math.abs(current.y - target.y) > EPS ||
       Math.abs(current.h - target.h) > EPS;
 
     if (!needMove) {
-      // 对齐到目标，最后 set 一次后停止循环
       current = { ...target };
       const finalB = {
         x: Math.round(current.x),
@@ -513,7 +526,6 @@ function startAnimationLoop() {
       return;
     }
 
-    // 插值推进
     current.x = lerp(current.x, target.x, LERP_SPEED);
     current.y = lerp(current.y, target.y, LERP_SPEED);
     current.w = assistWidth;
@@ -526,7 +538,6 @@ function startAnimationLoop() {
       height: Math.round(current.h)
     };
 
-    // 仅当与上次应用的值有明显变化时才 setBounds，避免高频无效调用
     const deltaBigEnough =
       !lastAppliedBounds ||
       Math.abs(newB.x - lastAppliedBounds.x) >= APPLY_DELTA ||
@@ -550,6 +561,7 @@ app.whenReady().then(() => {
 
   startAnimationLoop();
   startForegroundFollow();
+  startDockPoller(); // 新增：兜底贴靠，保证持续吸附
 });
 
 ipcMain.on('close-main-window', () => { userHidden = true; showMini(); });
@@ -740,6 +752,7 @@ function cleanupAndQuit() {
   if (quitting) return; quitting = true;
   if (animationTimer) { clearInterval(animationTimer); animationTimer = null; }
   if (fgFollowTimer) { clearInterval(fgFollowTimer); fgFollowTimer = null; }
+  if (dockPollTimer) { clearInterval(dockPollTimer); dockPollTimer = null; }
   try { saveConfig(); } catch {}
   try { wechatMonitor.stop && wechatMonitor.stop(); } catch {}
   try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy(); } catch {}

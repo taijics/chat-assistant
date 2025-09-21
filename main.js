@@ -45,9 +45,9 @@ let pinnedAlwaysOnTop = false; // 置顶状态（默认关闭）
 let fgFollowTimer = null;
 const FG_CHECK_INTERVAL = 250;
 
-// 记录最近一次实际应用的边界，避免重复 setBounds
+// 记录最近一次实际应用到窗口的边界，避免重复 setBounds
 let lastAppliedBounds = null;
-// 记录最近一次已同步的高度限制，避免每帧 setMinimum/MaximumSize
+// 记录最近一次同步的高度限制值，避免每帧 setMinimum/MaximumSize
 let lastConstraintH = null;
 
 // 贴靠兜底轮询（防止偶发丢事件时“脱钩”）
@@ -85,6 +85,8 @@ function findDisplayForPhysicalRect(pxRect) {
   return best;
 }
 
+// 贴右；不够则贴左；高度与微信一致（DIP）
+// 右贴边时向左收 DOCK_GAP_FIX_DIPS 以消缝
 function dockToWeChatRightOrLeftPx(pxRect) {
   const display = findDisplayForPhysicalRect(pxRect);
   const s = display.scaleFactor || 1;
@@ -112,7 +114,7 @@ function dockToWeChatRightOrLeftPx(pxRect) {
 function syncHeightConstraint(h) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const hh = Math.max(1, Math.round(h));
-  if (lastConstraintH === hh) return;
+  if (lastConstraintH === hh) return; // 仅在变化时同步，避免每帧刷新
   lastConstraintH = hh;
   mainWindow.setMinimumSize(ASSISTANT_MIN_W, hh);
   mainWindow.setMaximumSize(ASSISTANT_MAX_W, hh);
@@ -214,7 +216,7 @@ function showMain() {
 function applyTargetImmediate() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   current = { ...target };
-  syncHeightConstraint(current.h); // 仅在高度变化时生效
+  syncHeightConstraint(current.h); // 仅在高度变化时同步
   const b = {
     x: Math.round(current.x),
     y: Math.round(current.y),
@@ -263,9 +265,9 @@ function startForegroundFollow() {
   }, FG_CHECK_INTERVAL);
 }
 
+// 兜底贴靠：每 400ms 主动对齐一次，避免偶发丢事件导致脱钩
 function startDockPoller() {
   if (pollDockTimer) clearInterval(pollDockTimer);
-  // 兜底：每 400ms 主动对齐一次，避免偶发丢事件导致脱钩
   pollDockTimer = setInterval(() => {
     if (quitting || userHidden) return;
     try {
@@ -325,7 +327,7 @@ function handleEvent(evt) {
 }
 
 function startAnimationLoop() {
-  // 自适应动画：仅当确实有变化时 setBounds，达到目标后停止定时器
+  // 仅当确实有变化时 setBounds；达到目标后停止
   if (animationTimer) clearInterval(animationTimer);
 
   const EPS = 0.6;       // 小于此阈值视为到位
@@ -335,7 +337,6 @@ function startAnimationLoop() {
     if (quitting) return;
     if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
 
-    // 是否还有要移动/缩放
     const needMove =
       Math.abs(current.x - target.x) > EPS ||
       Math.abs(current.y - target.y) > EPS ||
@@ -343,7 +344,6 @@ function startAnimationLoop() {
       Math.abs(current.h - target.h) > EPS;
 
     if (!needMove) {
-      // 对齐到目标，必要时最后 set 一次后停止循环
       current = { ...target };
       const finalB = {
         x: Math.round(current.x),
@@ -399,7 +399,7 @@ app.whenReady().then(() => {
   createMiniWindow();
   wechatMonitor.start({ keywords: [] }, handleEvent);
 
-  // 启动动画循环（满足条件时会很快自停），不再每帧强制 setBounds
+  // 动画循环满足条件时会很快自停；不再每帧强制刷新边界
   startAnimationLoop();
   startForegroundFollow();
   startDockPoller(); // 兜底贴靠，保证持续吸附
