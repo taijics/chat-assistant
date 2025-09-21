@@ -10,8 +10,11 @@ const {
   nativeImage
 } = require('electron');
 
-// 路径说明：此文件位于 main/index.js
-// wechatMonitor 位置自动探测（找不到则用 stub 不中断运行）
+const fs = require('fs');
+const path = require('path');
+
+let lastAppliedBounds = null;
+
 let wechatMonitor;
 (function resolveWechatMonitor() {
   const tryPaths = [
@@ -35,13 +38,11 @@ try { ({ registerAimodelsHandlers } = require('./aimodels')); } catch {}
 let registerAiHandlers = () => {};
 try { ({ registerAiHandlers } = require('./ai-coze')); } catch {}
 
-// send-keys 兼容路径
 let sendKeys = { sendCtrlV() {}, sendEnter() {} };
 try { sendKeys = require('../utils/send-keys'); } catch { try { sendKeys = require('./utils/send-keys'); } catch {} }
 
 const { exec } = require('child_process');
 
-// node-window-manager（安全引入）
 let windowManager = null;
 try {
   ({ windowManager } = require('node-window-manager'));
@@ -58,17 +59,18 @@ let animationTimer = null;
 const LERP_SPEED = 0.22;
 const ANIMATION_INTERVAL = 16;
 
-// 固定宽度：只用这一种宽度，不允许改变（如需调整，改这里）
-const ASSISTANT_FIXED_WIDTH = 350;
+const ASSISTANT_MIN_W = 260;
+const ASSISTANT_MAX_W = 1400;
+let assistWidth = 350;
 
-// 最小高度保护（高度仍由微信决定）
 const MIN_HEIGHT = 200;
+const DOCK_GAP_FIX_DIPS = 2;
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 function lerp(a, b, t) { return a + (b - a) * t; }
 
-let current = { x: 0, y: 0, w: ASSISTANT_FIXED_WIDTH, h: 600 };
-let target  = { x: 0, y: 0, w: ASSISTANT_FIXED_WIDTH, h: 600 };
+let current = { x: 0, y: 0, w: assistWidth, h: 600 };
+let target  = { x: 0, y: 0, w: assistWidth, h: 600 };
 
 let userHidden = false;
 let wechatFound = false;
@@ -77,14 +79,49 @@ let firstDirectPosition = false;
 let quitting = false;
 let pinnedAlwaysOnTop = false;
 
-// 保存最近一次微信窗口的“物理像素矩形”
 let lastWechatPxRect = null;
 
-// 前台跟随层级
 let fgFollowTimer = null;
 const FG_CHECK_INTERVAL = 250;
 
-// 工具：根据物理像素矩形找到对应显示器并换算为 DIP
+/* ---- 宽度持久化（settings.json） ---- */
+const CONFIG_FILE_NAME = 'settings.json';
+let saveTimer = null;
+
+function getConfigPath() {
+  return path.join(app.getPath('userData'), CONFIG_FILE_NAME);
+}
+function loadConfig() {
+  try {
+    const p = getConfigPath();
+    if (!fs.existsSync(p)) return;
+    const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (typeof data.assistWidth === 'number') {
+      assistWidth = clamp(Math.round(data.assistWidth), ASSISTANT_MIN_W, ASSISTANT_MAX_W);
+      current.w = assistWidth;
+      target.w  = assistWidth;
+      console.log('[config] assistWidth restored:', assistWidth);
+    }
+  } catch (e) {
+    console.warn('[config] load failed:', e.message);
+  }
+}
+function saveConfig() {
+  try {
+    const p = getConfigPath();
+    const payload = { assistWidth };
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(payload, null, 2), 'utf8');
+  } catch (e) {
+    console.warn('[config] save failed:', e.message);
+  }
+}
+function scheduleSaveConfig() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { saveTimer = null; saveConfig(); }, 250);
+}
+/* ------------------------------------ */
+
 function findDisplayForPhysicalRect(pxRect) {
   const displays = screen.getAllDisplays();
   let best = displays[0], bestArea = -1;
@@ -106,88 +143,148 @@ function pxToDipRect(pxRect) {
   return { x: Math.round(pxRect.x / s), y: Math.round(pxRect.y / s), width: Math.round(pxRect.width / s), height: Math.round(pxRect.height / s), display: d };
 }
 
-// 仅计算“贴右（不够则左）”的 X，不改变宽度与高度
 function computeDockX(pxRect, width) {
-  const dip = pxToDipRect(pxRect);
-  const wa = dip.display.workArea;
-  const xRight = dip.x + dip.width;
-  let nextX = (xRight + width <= wa.x + wa.width) ? xRight : (dip.x - width);
+  const display = findDisplayForPhysicalRect(pxRect);
+  const s = display.scaleFactor || 1;
+  const wa = display.workArea;
+
+  const wechatLeftDip  = Math.floor(pxRect.x / s);
+  const wechatRightDip = Math.floor((pxRect.x + pxRect.width) / s);
+
+  let nextX;
+  if (wechatRightDip + width <= wa.x + wa.width) {
+    nextX = wechatRightDip - DOCK_GAP_FIX_DIPS;
+  } else {
+    nextX = wechatLeftDip - width;
+  }
+
   if (nextX < wa.x) nextX = wa.x;
-  if (nextX + width > wa.x + wa.width) nextX = wa.x + wa.width - width;
+  const maxX = wa.x + wa.width - width;
+  if (nextX > maxX) nextX = maxX;
   return nextX;
 }
 
-function createMainWindow() {
+/* function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: ASSISTANT_FIXED_WIDTH,
+    width: assistWidth,
     height: current.h,
-    frame: true,                 // 原生标题栏
-    autoHideMenuBar: false,      // 常显菜单栏
-    resizable: false,            // 禁止用户调整尺寸（宽高都不允许）
+    frame: true,
+    autoHideMenuBar: false,
+    resizable: false,
     show: false,
     transparent: false,
-    // 限制为固定宽度（双保险）
-    minWidth: ASSISTANT_FIXED_WIDTH,
-    maxWidth: ASSISTANT_FIXED_WIDTH,
+    minWidth: ASSISTANT_MIN_W,
     minHeight: MIN_HEIGHT,
     webPreferences: { nodeIntegration: true, contextIsolation: false }
   });
 
-  // 标准菜单栏（File/Edit/View/Window/Help）
-  const template = [
-    {
-      label: 'File',
-      submenu: [
-        { role: 'close', label: 'Close' },
-        { role: 'quit',  label: 'Quit'  }
-      ]
-    },
-    {
-      label: 'Edit',
-      submenu: [
-        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
-        { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }
-      ]
-    },
-    {
-      label: 'View',
-      submenu: [
-        { role: 'reload' }, { role: 'forceReload' }, { type: 'separator' },
-        { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' },
-        { role: 'togglefullscreen' }, { type: 'separator' },
-        { label: 'Toggle DevTools', accelerator: 'Alt+D', click: toggleDevTools }
-      ]
-    },
-    {
-      label: 'Window',
-      submenu: [ { role: 'minimize' }, { role: 'close' } ]
-    },
-    {
-      label: 'Help',
-      submenu: [
-        { label: 'Homepage', click: () => shell.openExternal('https://github.com/') }
-      ]
-    }
-  ];
-  try { Menu.setApplicationMenu(Menu.buildFromTemplate(template)); } catch {}
-  try { mainWindow.setMenuBarVisibility(true); } catch {}
+  try { mainWindow.setHasShadow(false); } catch {}
+
+  // 中文菜单（含设置与常用功能）
+  buildAppMenu();
 
   mainWindow.loadFile(pathJoin(__dirname, '../renderer/index.html'));
 
   try { registerAimodelsHandlers(mainWindow); } catch {}
   try { registerAiHandlers(mainWindow); } catch {}
 
-  // Alt + D（仅窗口聚焦时）
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.alt && !input.control && !input.shift && String(input.key || '').toLowerCase() === 'd') {
       event.preventDefault(); toggleDevTools();
     }
   });
 
-  // 置顶状态同步
   mainWindow.webContents.on('did-finish-load', () => {
     try { mainWindow.webContents.send('toolbar:pin-state', pinnedAlwaysOnTop); } catch {}
   });
+}
+ */
+function buildAppMenu() {
+  const template = [
+    {
+      label: '文件',
+      submenu: [
+        { label: '新建聊天', click: () => mainWindow?.webContents.send('app:new-chat') },
+        { label: '历史', click: () => mainWindow?.webContents.send('app:show-history') },
+        { type: 'separator' },
+        { label: '导出', click: async () => { await handleExport(); } },
+        { type: 'separator' },
+        { role: 'minimize', label: '最小化' },
+        { role: 'close', label: '关闭窗口' },
+        { role: 'quit', label: '退出' }
+      ]
+    },
+    {
+      label: '编辑',
+      submenu: [
+        { role: 'undo', label: '撤销' },
+        { role: 'redo', label: '重做' },
+        { type: 'separator' },
+        { role: 'cut', label: '剪切' },
+        { role: 'copy', label: '复制' },
+        { role: 'paste', label: '粘贴' },
+        { role: 'selectAll', label: '全选' }
+      ]
+    },
+    {
+      label: '视图',
+      submenu: [
+        { role: 'reload', label: '重新加载' },
+        { role: 'forceReload', label: '强制重新加载' },
+        { type: 'separator' },
+        { role: 'resetZoom', label: '实际大小' },
+        { role: 'zoomIn', label: '放大' },
+        { role: 'zoomOut', label: '缩小' },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: '切换全屏' },
+        { type: 'separator' },
+        { label: '开发者工具', accelerator: 'Alt+D', click: toggleDevTools }
+      ]
+    },
+    {
+      label: '工具',
+      submenu: [
+        { label: '截图', click: () => exec('explorer.exe ms-screenclip:', (err) => { if (err) exec('snippingtool /clip'); }) },
+        { label: '搜索', click: () => mainWindow?.webContents.send('app:search') },
+        { label: '清空', click: () => mainWindow?.webContents.send('app:clear-chat') },
+        { type: 'separator' },
+        { label: '设置', click: () => openSettingsWindow() }
+      ]
+    },
+    {
+      label: '窗口',
+      submenu: [
+        {
+          label: '置顶',
+          type: 'checkbox',
+          checked: !!pinnedAlwaysOnTop,
+          click: () => {
+            pinnedAlwaysOnTop = !pinnedAlwaysOnTop;
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.setAlwaysOnTop(pinnedAlwaysOnTop, 'screen-saver');
+              mainWindow.webContents.send('toolbar:pin-state', pinnedAlwaysOnTop);
+            }
+            if (!pinnedAlwaysOnTop) updateZOrder();
+            buildAppMenu();
+          }
+        },
+        { type: 'separator' },
+        { role: 'minimize', label: '最小化' },
+        { role: 'close', label: '关闭窗口' }
+      ]
+    },
+    {
+      label: '帮助',
+      submenu: [
+        { label: '关于', click: () => showAbout() },
+        { label: '开源主页', click: () => shell.openExternal('https://github.com/') }
+      ]
+    }
+  ];
+  try {
+    Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+    mainWindow && mainWindow.setMenuBarVisibility(true);
+  } catch {}
 }
 
 function toggleDevTools() {
@@ -197,11 +294,79 @@ function toggleDevTools() {
   }
 }
 
+// REPLACE the whole createMainWindow function with this:
+function createMainWindow() {
+   mainWindow = new BrowserWindow({
+      width: assistWidth,
+      height: current.h,
+      frame: true,
+      autoHideMenuBar: false,
+      resizable: false,
+      show: false,
+      transparent: false,
+      backgroundColor: '#ffffff',     // 新增：减少黑屏/白屏闪烁
+      useContentSize: true,           // 可选：按内容计算尺寸，避免非必要的往返
+      minWidth: ASSISTANT_MIN_W,
+      minHeight: MIN_HEIGHT,
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false
+      }
+    });
+
+  try { mainWindow.setHasShadow(false); } catch {}
+
+  // 中文菜单（含设置与常用功能）
+  buildAppMenu();
+
+  // 让原生右上角按钮具备“最小化到迷你窗”和“退出”的行为
+  // 注意：minimize 事件不可阻止，这里在触发后隐藏主窗并显示迷你窗
+  mainWindow.on('minimize', () => {
+    if (quitting) return;
+    userHidden = true;
+    // 在下一轮事件循环隐藏主窗，避免闪烁
+    setImmediate(() => {
+      try { mainWindow.hide(); } catch {}
+      showMini();
+    });
+  });
+
+  mainWindow.on('close', (e) => {
+    if (quitting) return;     // 若已进入退出流程，放行
+    e.preventDefault();       // 拦截系统关闭
+    cleanupAndQuit();         // 你的统一退出逻辑
+  });
+
+  mainWindow.loadFile(pathJoin(__dirname, '../renderer/index.html'));
+
+  try { registerAimodelsHandlers(mainWindow); } catch {}
+  try { registerAiHandlers(mainWindow); } catch {}
+
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.alt && !input.control && !input.shift && String(input.key || '').toLowerCase() === 'd') {
+      event.preventDefault();
+      toggleDevTools();
+    }
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    try { mainWindow.webContents.send('toolbar:pin-state', pinnedAlwaysOnTop); } catch {}
+  });
+}
+
+// REPLACE the whole createMiniWindow function with this (注意：不要在里面再定义 createMainWindow 了):
 function createMiniWindow() {
   const { width } = screen.getPrimaryDisplay().workAreaSize;
   miniWindow = new BrowserWindow({
-    width: 160, height: 40, x: width - 180, y: 20,
-    frame: false, resizable: false, show: true, alwaysOnTop: true, skipTaskbar: true,
+    width: 160,
+    height: 40,
+    x: width - 180,
+    y: 20,
+    frame: false,
+    resizable: false,
+    show: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
     webPreferences: { nodeIntegration: true, contextIsolation: false }
   });
   miniWindow.loadFile(pathJoin(__dirname, '../renderer/mini.html'));
@@ -221,10 +386,16 @@ function showMain() {
 function applyTargetImmediate() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   current = { ...target };
-  mainWindow.setBounds({
-    x: Math.round(current.x), y: Math.round(current.y),
-    width: ASSISTANT_FIXED_WIDTH, height: Math.round(current.h)
-  });
+  const b = {
+    x: Math.round(current.x),
+    y: Math.round(current.y),
+    width: Math.round(assistWidth),
+    height: Math.round(current.h)
+  };
+  try {
+    mainWindow.setBounds(b);
+    lastAppliedBounds = b;
+  } catch {}
 }
 
 function updateZOrder() {
@@ -234,7 +405,6 @@ function updateZOrder() {
   try { wechatMonitor.setZOrder(mainWindow.getNativeWindowHandle(), wechatHWND); } catch {}
 }
 
-// 前台跟随层级
 function startForegroundFollow() {
   if (fgFollowTimer) clearInterval(fgFollowTimer);
   fgFollowTimer = setInterval(() => {
@@ -257,13 +427,12 @@ function handleEvent(evt) {
       wechatFound = true; wechatHWND = hwnd;
       lastWechatPxRect = { x, y, width, height };
 
-      const dockX = computeDockX(lastWechatPxRect, ASSISTANT_FIXED_WIDTH);
+      const dockX = computeDockX(lastWechatPxRect, assistWidth);
       const dip   = pxToDipRect(lastWechatPxRect);
-      // 宽度固定不变；高度与微信一致；位置贴边
       target = {
         x: dockX,
         y: dip.y,
-        w: ASSISTANT_FIXED_WIDTH,
+        w: assistWidth,
         h: Math.max(dip.height, MIN_HEIGHT)
       };
       applyTargetImmediate();
@@ -275,13 +444,12 @@ function handleEvent(evt) {
       if (!wechatFound) return;
       lastWechatPxRect = { x, y, width, height };
 
-      const dockX = computeDockX(lastWechatPxRect, ASSISTANT_FIXED_WIDTH);
+      const dockX = computeDockX(lastWechatPxRect, assistWidth);
       const dip   = pxToDipRect(lastWechatPxRect);
-      // 仅更新 X/Y/H；W 保持固定
       target.x = dockX;
       target.y = dip.y;
       target.h = Math.max(dip.height, MIN_HEIGHT);
-      target.w = ASSISTANT_FIXED_WIDTH;
+      target.w = assistWidth;
 
       if (!firstDirectPosition) { applyTargetImmediate(); firstDirectPosition = true; }
       if (!userHidden) { showMain(); updateZOrder(); }
@@ -303,29 +471,78 @@ function handleEvent(evt) {
   }
 }
 
+// 用这个替换原来的 startAnimationLoop 实现
 function startAnimationLoop() {
+  // 若已有循环，先停掉
   if (animationTimer) clearInterval(animationTimer);
+
+  const EPS = 0.6; // 到目标小于 0.6px 视为到位
+  const APPLY_DELTA = 1; // 只有在>=1px 变化时才 setBounds
+
   animationTimer = setInterval(() => {
     if (quitting) return;
     if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
 
-    // 只在目标变化时平滑过去；宽度始终固定为 ASSISTANT_FIXED_WIDTH
+    // 是否还有要移动/缩放
+    const needMove =
+      Math.abs(current.x - target.x) > EPS ||
+      Math.abs(current.y - target.y) > EPS ||
+      Math.abs(current.h - target.h) > EPS;
+
+    if (!needMove) {
+      // 对齐到目标，最后 set 一次后停止循环
+      current = { ...target };
+      const finalB = {
+        x: Math.round(current.x),
+        y: Math.round(current.y),
+        width: Math.round(assistWidth),
+        height: Math.round(current.h)
+      };
+      const changed =
+        !lastAppliedBounds ||
+        finalB.x !== lastAppliedBounds.x ||
+        finalB.y !== lastAppliedBounds.y ||
+        finalB.width !== lastAppliedBounds.width ||
+        finalB.height !== lastAppliedBounds.height;
+      if (changed) {
+        try { mainWindow.setBounds(finalB); lastAppliedBounds = finalB; } catch {}
+      }
+
+      clearInterval(animationTimer);
+      animationTimer = null;
+      return;
+    }
+
+    // 插值推进
     current.x = lerp(current.x, target.x, LERP_SPEED);
     current.y = lerp(current.y, target.y, LERP_SPEED);
-    current.w = ASSISTANT_FIXED_WIDTH;
+    current.w = assistWidth;
     current.h = lerp(current.h, target.h, LERP_SPEED);
 
-    try {
-      mainWindow.setBounds({
-        x: Math.round(current.x), y: Math.round(current.y),
-        width: ASSISTANT_FIXED_WIDTH, height: Math.round(current.h)
-      });
-    } catch {}
+    const newB = {
+      x: Math.round(current.x),
+      y: Math.round(current.y),
+      width: Math.round(assistWidth),
+      height: Math.round(current.h)
+    };
+
+    // 仅当与上次应用的值有明显变化时才 setBounds，避免高频无效调用
+    const deltaBigEnough =
+      !lastAppliedBounds ||
+      Math.abs(newB.x - lastAppliedBounds.x) >= APPLY_DELTA ||
+      Math.abs(newB.y - lastAppliedBounds.y) >= APPLY_DELTA ||
+      Math.abs(newB.width - lastAppliedBounds.width) >= APPLY_DELTA ||
+      Math.abs(newB.height - lastAppliedBounds.height) >= APPLY_DELTA;
+
+    if (deltaBigEnough) {
+      try { mainWindow.setBounds(newB); lastAppliedBounds = newB; } catch {}
+    }
   }, ANIMATION_INTERVAL);
 }
 
-// ---- 应用生命周期 ----
 app.whenReady().then(() => {
+  loadConfig();
+
   createMainWindow();
   createMiniWindow();
 
@@ -335,7 +552,6 @@ app.whenReady().then(() => {
   startForegroundFollow();
 });
 
-// 最小化/恢复/退出
 ipcMain.on('close-main-window', () => { userHidden = true; showMini(); });
 ipcMain.on('restore-main-window', () => {
   userHidden = false;
@@ -343,10 +559,9 @@ ipcMain.on('restore-main-window', () => {
 });
 ipcMain.on('exit-app', () => { cleanupAndQuit(); });
 
-// 渲染端也可以触发 DevTools
 ipcMain.on('devtools:toggle', () => toggleDevTools());
 
-// 顶栏菜单动作（从渲染进程 header 发来）
+// 来自渲染端旧“菜单”的动作仍保留兼容
 ipcMain.on('toolbar:click', async (_e, action) => {
   switch (action) {
     case 'new':      mainWindow?.webContents.send('app:new-chat'); break;
@@ -358,6 +573,7 @@ ipcMain.on('toolbar:click', async (_e, action) => {
         mainWindow.webContents.send('toolbar:pin-state', pinnedAlwaysOnTop);
       }
       if (!pinnedAlwaysOnTop) updateZOrder();
+      buildAppMenu();
       break;
     case 'screenshot':
       exec('explorer.exe ms-screenclip:', (err) => { if (err) exec('snippingtool /clip'); }); break;
@@ -369,6 +585,36 @@ ipcMain.on('toolbar:click', async (_e, action) => {
     case 'minimize': userHidden = true; showMini(); break;
     case 'exit':     cleanupAndQuit(); break;
   }
+});
+
+// 自定义右侧缩放：渲染进程把新宽度传上来
+ipcMain.handle('window:get-bounds', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
+  return mainWindow.getBounds();
+});
+ipcMain.on('window:resize-width', (_e, newWidth) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const clamped = clamp(Math.round(newWidth || 0), ASSISTANT_MIN_W, ASSISTANT_MAX_W);
+  if (clamped === assistWidth) return;
+
+  assistWidth = clamped;
+  target.w = clamped;
+
+  if (lastWechatPxRect) {
+    target.x = computeDockX(lastWechatPxRect, assistWidth);
+  }
+
+  try {
+    const b = mainWindow.getBounds();
+    mainWindow.setBounds({
+      x: Math.round(target.x ?? b.x),
+      y: b.y,
+      width: clamped,
+      height: b.height
+    });
+  } catch {}
+
+  scheduleSaveConfig();
 });
 
 // 话术：粘贴（单击）
@@ -409,7 +655,6 @@ function focusWeChatWindow() {
   } catch {}
 }
 
-// 选择目录（返回单个路径或 null）
 ipcMain.handle('media:choose-dir', async (_e, payload) => {
   const title = (payload && payload.title) || '选择文件夹';
   const { canceled, filePaths } = await dialog.showOpenDialog({ title, properties: ['openDirectory'] });
@@ -417,7 +662,6 @@ ipcMain.handle('media:choose-dir', async (_e, payload) => {
   return filePaths[0];
 });
 
-// 粘贴图片到微信：写入剪贴板图片 -> 聚焦微信 -> Ctrl+V
 ipcMain.on('media:image-paste', async (_e, filePath) => {
   try {
     if (!filePath) return;
@@ -425,7 +669,7 @@ ipcMain.on('media:image-paste', async (_e, filePath) => {
     if (!img || (typeof img.isEmpty === 'function' && img.isEmpty())) return;
     clipboard.writeImage(img);
     focusWeChatWindow();
-    setTimeout(() => { try { sendKeys.sendCtrlV(); } catch {} if (!pinnedAlwaysOnTop) updateZOrder(); }, 120);
+    setTimeout(() => { try { require('../utils/send-keys').sendCtrlV(); } catch {} if (!pinnedAlwaysOnTop) updateZOrder(); }, 120);
   } catch (err) { console.error('image paste failed:', err); }
 });
 
@@ -439,7 +683,7 @@ async function handleExport() {
     const { canceled, filePath } = await dialog.showSaveDialog({
       title: '导出聊天为 Markdown', defaultPath: 'chat-export.md', filters: [{ name: 'Markdown', extensions: ['md'] }]
     });
-    if (!canceled && filePath) { const fs = require('fs'); fs.writeFileSync(filePath, data, 'utf8'); }
+    if (!canceled && filePath) { const fs2 = require('fs'); fs2.writeFileSync(filePath, data, 'utf8'); }
   } catch (e) { console.error('export failed:', e); }
 }
 
@@ -479,6 +723,7 @@ ipcMain.on('settings:set', (_e, payload) => {
       mainWindow.webContents.send('toolbar:pin-state', pinnedAlwaysOnTop);
     }
     if (!pinnedAlwaysOnTop) updateZOrder();
+    buildAppMenu();
   }
 });
 
@@ -495,6 +740,7 @@ function cleanupAndQuit() {
   if (quitting) return; quitting = true;
   if (animationTimer) { clearInterval(animationTimer); animationTimer = null; }
   if (fgFollowTimer) { clearInterval(fgFollowTimer); fgFollowTimer = null; }
+  try { saveConfig(); } catch {}
   try { wechatMonitor.stop && wechatMonitor.stop(); } catch {}
   try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy(); } catch {}
   try { if (miniWindow && !miniWindow.isDestroyed()) miniWindow.destroy(); } catch {}
@@ -503,5 +749,4 @@ function cleanupAndQuit() {
 
 app.on('window-all-closed', () => { cleanupAndQuit(); });
 
-// 小工具：兼容 node < 20 的 path.join 传参误写
 function pathJoin(...args) { try { return require('path').join(...args); } catch { return args.join('/'); } }

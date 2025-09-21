@@ -41,9 +41,17 @@ let firstDirectPosition = false;
 let quitting = false;
 let pinnedAlwaysOnTop = false; // 置顶状态（默认关闭）
 
-// 新增：前台跟随定时器
+// 前台跟随定时器
 let fgFollowTimer = null;
 const FG_CHECK_INTERVAL = 250;
+
+// 记录最近一次实际应用的边界，避免重复 setBounds
+let lastAppliedBounds = null;
+// 记录最近一次已同步的高度限制，避免每帧 setMinimum/MaximumSize
+let lastConstraintH = null;
+
+// 贴靠兜底轮询（防止偶发丢事件时“脱钩”）
+let pollDockTimer = null;
 
 function lerp(a, b, t) {
   return a + (b - a) * t;
@@ -77,20 +85,6 @@ function findDisplayForPhysicalRect(pxRect) {
   return best;
 }
 
-function pxToDipRect(pxRect) {
-  const d = findDisplayForPhysicalRect(pxRect);
-  const s = d.scaleFactor || 1;
-  return {
-    x: Math.round(pxRect.x / s),
-    y: Math.round(pxRect.y / s),
-    width: Math.round(pxRect.width / s),
-    height: Math.round(pxRect.height / s),
-    display: d
-  };
-}
-
-// 贴右；不够则贴左；高度与微信一致（DIP）
-// 右贴边时向左收 DOCK_GAP_FIX_DIPS 以消缝
 function dockToWeChatRightOrLeftPx(pxRect) {
   const display = findDisplayForPhysicalRect(pxRect);
   const s = display.scaleFactor || 1;
@@ -117,8 +111,11 @@ function dockToWeChatRightOrLeftPx(pxRect) {
 
 function syncHeightConstraint(h) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.setMinimumSize(ASSISTANT_MIN_W, Math.max(1, Math.round(h)));
-  mainWindow.setMaximumSize(ASSISTANT_MAX_W, Math.max(1, Math.round(h)));
+  const hh = Math.max(1, Math.round(h));
+  if (lastConstraintH === hh) return;
+  lastConstraintH = hh;
+  mainWindow.setMinimumSize(ASSISTANT_MIN_W, hh);
+  mainWindow.setMaximumSize(ASSISTANT_MAX_W, hh);
 }
 
 function createMainWindow() {
@@ -132,6 +129,7 @@ function createMainWindow() {
     titleBarStyle: 'hidden',
     hasShadow: false,         // 关闭阴影，避免与微信间出现视觉缝隙
     roundedCorners: false,    // Windows 11 圆角可能带来边缘空白
+    backgroundColor: '#ffffff', // 减少首屏黑/白闪
     minWidth: ASSISTANT_MIN_W,
     maxWidth: ASSISTANT_MAX_W,
     webPreferences: {
@@ -143,6 +141,7 @@ function createMainWindow() {
   registerAimodelsHandlers(mainWindow);
   registerAiHandlers(mainWindow);
 
+  // 初始同步一次高度限制
   syncHeightConstraint(current.h);
 
   // 记住用户拖动后的宽度
@@ -214,14 +213,26 @@ function showMain() {
 
 function applyTargetImmediate() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  syncHeightConstraint(target.h);
   current = { ...target };
-  mainWindow.setBounds({
+  syncHeightConstraint(current.h); // 仅在高度变化时生效
+  const b = {
     x: Math.round(current.x),
     y: Math.round(current.y),
     width: Math.round(current.w),
     height: Math.round(current.h)
-  });
+  };
+  try {
+    if (
+      !lastAppliedBounds ||
+      b.x !== lastAppliedBounds.x ||
+      b.y !== lastAppliedBounds.y ||
+      b.width !== lastAppliedBounds.width ||
+      b.height !== lastAppliedBounds.height
+    ) {
+      mainWindow.setBounds(b);
+      lastAppliedBounds = b;
+    }
+  } catch {}
 }
 
 function updateZOrder() {
@@ -252,6 +263,31 @@ function startForegroundFollow() {
   }, FG_CHECK_INTERVAL);
 }
 
+function startDockPoller() {
+  if (pollDockTimer) clearInterval(pollDockTimer);
+  // 兜底：每 400ms 主动对齐一次，避免偶发丢事件导致脱钩
+  pollDockTimer = setInterval(() => {
+    if (quitting || userHidden) return;
+    try {
+      const wins = windowManager.getWindows();
+      const wx = wins.find(w => /微信|wechat/i.test(w.getTitle() || ''));
+      if (!wx) return;
+      const b = wx.getBounds(); // 物理像素
+      const next = dockToWeChatRightOrLeftPx({ x: b.x, y: b.y, width: b.width, height: b.height });
+      const moved =
+        Math.abs(next.x - target.x) >= 1 ||
+        Math.abs(next.y - target.y) >= 1 ||
+        Math.abs(next.w - target.w) >= 1 ||
+        Math.abs(next.h - target.h) >= 1;
+      if (moved) {
+        target = next;
+        applyTargetImmediate();
+        if (!userHidden) { showMain(); updateZOrder(); }
+      }
+    } catch {}
+  }, 400);
+}
+
 function handleEvent(evt) {
   if (quitting) return;
   const { type, x, y, width, height, hwnd } = evt;
@@ -260,14 +296,14 @@ function handleEvent(evt) {
       wechatFound = true;
       wechatHWND = hwnd;
       target = dockToWeChatRightOrLeftPx({ x, y, width, height });
-      applyTargetImmediate();
+      applyTargetImmediate();                 // 立即贴靠
       firstDirectPosition = true;
       if (!userHidden) { showMain(); updateZOrder(); }
       break;
     case 'position':
       if (!wechatFound) return;
       target = dockToWeChatRightOrLeftPx({ x, y, width, height });
-      if (!firstDirectPosition) { applyTargetImmediate(); firstDirectPosition = true; }
+      applyTargetImmediate();                 // 每次位置变化都立即对齐，确保“吸附”
       if (!userHidden) { showMain(); updateZOrder(); }
       break;
     case 'foreground':
@@ -289,24 +325,72 @@ function handleEvent(evt) {
 }
 
 function startAnimationLoop() {
+  // 自适应动画：仅当确实有变化时 setBounds，达到目标后停止定时器
   if (animationTimer) clearInterval(animationTimer);
+
+  const EPS = 0.6;       // 小于此阈值视为到位
+  const APPLY_DELTA = 1; // 边界变化达到 1px 才调用 setBounds
+
   animationTimer = setInterval(() => {
     if (quitting) return;
     if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
-    syncHeightConstraint(target.h);
 
-    current.x = lerp(current.x, target.x, LERP_SPEED);
-    current.y = lerp(current.y, target.y, LERP_SPEED);
-    current.w = lerp(current.w, target.w, LERP_SPEED);
-    current.h = lerp(current.h, target.h, LERP_SPEED);
-    try {
-      mainWindow.setBounds({
+    // 是否还有要移动/缩放
+    const needMove =
+      Math.abs(current.x - target.x) > EPS ||
+      Math.abs(current.y - target.y) > EPS ||
+      Math.abs(current.w - target.w) > EPS ||
+      Math.abs(current.h - target.h) > EPS;
+
+    if (!needMove) {
+      // 对齐到目标，必要时最后 set 一次后停止循环
+      current = { ...target };
+      const finalB = {
         x: Math.round(current.x),
         y: Math.round(current.y),
         width: Math.round(current.w),
         height: Math.round(current.h)
-      });
-    } catch {}
+      };
+      const changed =
+        !lastAppliedBounds ||
+        finalB.x !== lastAppliedBounds.x ||
+        finalB.y !== lastAppliedBounds.y ||
+        finalB.width !== lastAppliedBounds.width ||
+        finalB.height !== lastAppliedBounds.height;
+      if (changed) {
+        try { mainWindow.setBounds(finalB); lastAppliedBounds = finalB; } catch {}
+      }
+      clearInterval(animationTimer);
+      animationTimer = null;
+      return;
+    }
+
+    // 插值推进
+    current.x = lerp(current.x, target.x, LERP_SPEED);
+    current.y = lerp(current.y, target.y, LERP_SPEED);
+    current.w = lerp(current.w, target.w, LERP_SPEED);
+    current.h = lerp(current.h, target.h, LERP_SPEED);
+
+    // 仅在高度变化时同步约束，避免每帧刷新最小/最大尺寸
+    syncHeightConstraint(current.h);
+
+    const newB = {
+      x: Math.round(current.x),
+      y: Math.round(current.y),
+      width: Math.round(current.w),
+      height: Math.round(current.h)
+    };
+
+    const deltaBigEnough =
+      !lastAppliedBounds ||
+      Math.abs(newB.x - lastAppliedBounds.x) >= APPLY_DELTA ||
+      Math.abs(newB.y - lastAppliedBounds.y) >= APPLY_DELTA ||
+      Math.abs(newB.width - lastAppliedBounds.width) >= APPLY_DELTA ||
+      Math.abs(newB.height - lastAppliedBounds.height) >= APPLY_DELTA;
+
+    if (deltaBigEnough) {
+      try { mainWindow.setBounds(newB); lastAppliedBounds = newB; } catch {}
+    }
   }, ANIMATION_INTERVAL);
 }
 
@@ -314,8 +398,11 @@ app.whenReady().then(() => {
   createMainWindow();
   createMiniWindow();
   wechatMonitor.start({ keywords: [] }, handleEvent);
+
+  // 启动动画循环（满足条件时会很快自停），不再每帧强制 setBounds
   startAnimationLoop();
   startForegroundFollow();
+  startDockPoller(); // 兜底贴靠，保证持续吸附
 
   const menu = Menu.buildFromTemplate([{
     label: 'Debug',
@@ -398,7 +485,9 @@ ipcMain.on('window:resize-width', (_e, newWidth) => {
   current.w = clamped;
   try {
     const b = mainWindow.getBounds();
-    mainWindow.setBounds({ x: b.x, y: b.y, width: clamped, height: b.height });
+    const bb = { x: b.x, y: b.y, width: clamped, height: b.height };
+    mainWindow.setBounds(bb);
+    lastAppliedBounds = bb;
   } catch {}
 });
 
@@ -576,6 +665,7 @@ function cleanupAndQuit() {
   quitting = true;
   if (animationTimer) { clearInterval(animationTimer); animationTimer = null; }
   if (fgFollowTimer) { clearInterval(fgFollowTimer); fgFollowTimer = null; }
+  if (pollDockTimer) { clearInterval(pollDockTimer); pollDockTimer = null; }
   try { wechatMonitor.stop(); } catch {}
   try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy(); } catch {}
   try { if (miniWindow && !miniWindow.isDestroyed()) miniWindow.destroy(); } catch {}

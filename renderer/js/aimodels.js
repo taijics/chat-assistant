@@ -8,7 +8,11 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     let useFallbackIframe = false;
     let lastUrl = 'https://www.doubao.com/chat/';
 
-    // ---- 滚动/尺寸同步辅助（保持与之前一致） ----
+    // 懒加载与激活状态
+    let modelsInitialized = false; // 是否已创建/切换过一次模型视图
+    let modelsActive = false;      // 当前是否在“AI模型”选项卡
+
+    // ---- 滚动/尺寸同步辅助 ----
     let rafId = null;
     let scrollParents = [];
     let resizeObs = null;
@@ -34,6 +38,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     }
 
     function scheduleResize() {
+      if (!modelsInitialized || !modelsActive) return; // 未激活时不做尺寸同步
       if (useFallbackIframe) return;
       if (rafId) return;
       rafId = requestAnimationFrame(() => {
@@ -43,6 +48,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     }
 
     function bindScrollSync() {
+      if (!modelsInitialized || !modelsActive) return;
       const host = $('#aimodels-host');
       if (!host) return;
       unbindScrollSync();
@@ -124,7 +130,6 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       const url = btn.dataset.url || '';
       if (url) {
         lastUrl = url;
-        // 改为“切换/首建”而非每次 load
         switchTo(url);
       }
     }
@@ -136,9 +141,8 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
 
       if (!useFallbackIframe) {
         try {
-          // 不会重复加载已存在的站点视图；仅在首次创建时 loadURL
           await ipcRenderer.invoke('aimodels:switch', { url });
-          // 回到 models 页签或切换站点后，同步一次位置尺寸并绑定滚动同步
+          // 切回 models 页签或切换站点后，同步一次位置尺寸并绑定滚动同步
           await resizeToHost();
           bindScrollSync();
           if (iframe) iframe.hidden = true;
@@ -169,7 +173,6 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       if (inter.width <= 0 || inter.height <= 0) {
         // 完全不可见时，把 BrowserView 移出视口，避免遮挡
         return { x: 0, y: -10000, width: 1, height: 1 };
-        // 也可以选择不调整；这里选择移走更保险
       }
 
       return {
@@ -182,6 +185,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
 
     async function resizeToHost() {
       if (useFallbackIframe) return;
+      if (!modelsInitialized || !modelsActive) return; // 未初始化或未激活时不调整
       const bounds = getHostBounds();
       if (!bounds) return;
       try {
@@ -208,23 +212,26 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       const bar = $('#aimodels-tabs');
       if (!bar) return;
 
-      // 初次激活（默认豆包）
-      const current = document.querySelector('.aim-tab.active') || $$('.aim-tab', bar)[0];
-      if (current) {
-        lastUrl = current.dataset.url || lastUrl;
-        activateModel(current);
+      // 初次加载：不再主动创建/切换模型，避免首屏阻塞
+      // 只记录默认激活按钮和 lastUrl
+      const defaultBtn = document.querySelector('.aim-tab.active') || $$('.aim-tab', bar)[0];
+      if (defaultBtn) {
+        lastUrl = defaultBtn.dataset.url || lastUrl;
+        // 保留 active 样式，但不触发 activateModel()
       }
 
-      // 点击切换站点：改为“切换/首建”，不破坏已有站点的页面状态
+      // 点击切换站点（仅在“AI模型”页签内工作）
       bar.addEventListener('click', (e) => {
+        if (!modelsActive) return;
         const btn = e.target.closest('.aim-tab');
         if (!btn) return;
-        activateModel(btn);
+        activateModel(btn); // 已初始化且在 models 页签内，此时切换站点
         btn.focus();
       });
 
-      // 键盘导航
+      // 键盘导航（仅在“AI模型”页签内生效）
       bar.addEventListener('keydown', (e) => {
+        if (!modelsActive) return;
         const key = e.key;
         const tabs = $$('.aim-tab', bar);
         const idx = tabs.findIndex(t => t.getAttribute('aria-selected') === 'true');
@@ -248,36 +255,37 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         }
       });
 
-      // 窗口尺寸变化，同步 BrowserView 尺寸/位置
+      // 窗口尺寸变化：仅在 models 激活时同步 BrowserView 尺寸/位置
       window.addEventListener('resize', scheduleResize, { passive: true });
 
-      // 切换顶栏选项卡：离开时仅摘除；返回时按 lastUrl 重新附加（不重载）
+      // 顶部主选项卡切换
       document.getElementById('tabbar')?.addEventListener('click', (e) => {
         const tabBtn = e.target.closest('.tab-btn[role="tab"]');
         if (!tabBtn) return;
+
         if (tabBtn.dataset.tab === 'models') {
+          modelsActive = true;
           const active = document.querySelector('.aim-tab.active') || $$('.aim-tab', bar)[0];
-          if (active) {
-            lastUrl = active.dataset.url || lastUrl;
+          if (!modelsInitialized) {
+            modelsInitialized = true;
+            const toActivate = active || $$('.aim-tab', bar)[0];
+            if (toActivate) {
+              lastUrl = toActivate.dataset.url || lastUrl;
+              activateModel(toActivate);
+              setTimeout(() => { scheduleResize(); bindScrollSync(); }, 0);
+            }
+          } else {
+            // 已初始化：仅重新附加并对齐
+            if (active) lastUrl = active.dataset.url || lastUrl;
             switchTo(lastUrl);
-            setTimeout(() => {
-              scheduleResize();
-              bindScrollSync();
-            }, 0);
+            setTimeout(() => { scheduleResize(); bindScrollSync(); }, 0);
           }
         } else {
-          // 仅从窗口摘除当前视图，不销毁
+          // 离开 models：仅从窗口摘除
+          modelsActive = false;
           detachBrowserView();
         }
       });
-
-      // “在浏览器打开”按钮
-      $('#aimodels-open-external')?.addEventListener('click', () => {
-        ipcRenderer.invoke('aimodels:openExternal', { url: lastUrl });
-      });
-
-      // 初次渲染后对齐一次
-      setTimeout(scheduleResize, 0);
     }
 
     window.addEventListener('DOMContentLoaded', setupEvents);

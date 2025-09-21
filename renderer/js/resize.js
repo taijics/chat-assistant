@@ -1,4 +1,4 @@
-// 自定义右侧缩放（与 frameless + 拖拽区域兼容）
+// 自定义右侧缩放（与 frame:true 兼容，不依赖系统边框）
 const { ipcRenderer } = require('electron');
 
 (function () {
@@ -14,7 +14,6 @@ const { ipcRenderer } = require('electron');
     if (!dragging) return;
     const dx = e.screenX - startX;
     const newW = Math.round(startW + dx);
-    // 使用 rAF 节流
     if (!raf) {
       raf = requestAnimationFrame(() => {
         raf = 0;

@@ -9,7 +9,6 @@
         font-family: system-ui, Arial, sans-serif;
         background: #f5f6f7;
         -webkit-user-select: none;
-        -webkit-app-region: no-drag; /* 确保内容区不阻挡缩放/点击 */
       }
       .titlebar { display: none }
 
@@ -18,13 +17,11 @@
         position: fixed;
         top: 0;
         right: 0;
-        width: 8px;
+        width: 8px;        /* 命中区域 */
         height: 100%;
         cursor: ew-resize;
-        -webkit-app-region: no-drag;
         z-index: 9999;
-        /* 可选：半透明命中区，视觉上保持简洁 */
-        background: transparent;
+        background: transparent; /* 保持不可见 */
       }
     </style>
     <link rel="stylesheet" href="./css/header.css">
@@ -33,26 +30,7 @@
     <link rel="stylesheet" href="./css/aimodels.css">
   </head>
   <body>
-    <div class="app-titlebar">
-      <div class="title">微信助手</div>
-      <div class="spacer"></div>
-      <div class="btn" id="btn-settings" title="设置">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" stroke="currentColor" stroke-width="1.7" />
-          <path d="M19 12a7 7 0 0 0-.06-.9l1.94-1.5-1.9-3.29-2.27.92a7.08 7.08 0 0 0-1.56-.9L14.7 3h-5.4l-.45 2.33a7.08 7.08 0 0 0-1.56.9l-2.27-.92-1.9 3.29 1.94 1.5c.04-.3.06-.6.06-.9Z" stroke="currentColor" stroke-width="1.7" />
-        </svg>
-      </div>
-      <div class="btn" id="btn-minimize" title="最小化">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-          <rect x="3" y="7.5" width="10" height="1.8" fill="currentColor" />
-        </svg>
-      </div>
-      <div class="btn" id="btn-exit" title="退出">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-          <path d="M3.5 3.5l9 9m0-9l-9 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-        </svg>
-      </div>
-    </div>
+   
 
     <!-- Tabs bar -->
     <div class="tabbar" id="tabbar" role="tablist" aria-label="主功能选项卡">
