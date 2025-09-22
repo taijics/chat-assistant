@@ -1,5 +1,7 @@
+const { app } = require('electron');
+app.setPath('userData', 'D:\\chat-assistant-userdata'); // 确保该目录你有完全读写权限
+
 const {
-  app,
   BrowserWindow,
   ipcMain,
   screen,
@@ -138,18 +140,29 @@ function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: assistWidth,
     height: current.h,
-    frame: true,                 // 原生标题栏
-    autoHideMenuBar: false,      // 常显菜单栏
-    resizable: false,            // 禁止系统边框缩放（只用自定义右侧缩放）
+    frame: true,
+    autoHideMenuBar: false,
+    resizable: false,
     show: false,
     transparent: false,
-    // 允许程序化调整成任意宽度（去掉原来的 minWidth/maxWidth 固定 350）
     minWidth: ASSISTANT_MIN_W,
     minHeight: MIN_HEIGHT,
     webPreferences: { nodeIntegration: true, contextIsolation: false }
   });
 
-  // 关阴影以减小缝隙（Windows 上多数版本可生效）
+  // 系统原生最小化/关闭按钮事件，重定向到你原来的逻辑
+  mainWindow.on('minimize', (e) => {
+    if (quitting) return;
+    e.preventDefault();
+    userHidden = true;
+    showMini();
+  });
+  mainWindow.on('close', (e) => {
+    if (quitting) return;
+    e.preventDefault();
+    cleanupAndQuit();
+  });
+
   try { mainWindow.setHasShadow(false); } catch {}
 
   // 标准菜单栏（File/Edit/View/Window/Help）
@@ -196,14 +209,12 @@ function createMainWindow() {
   try { registerAimodelsHandlers(mainWindow); } catch {}
   try { registerAiHandlers(mainWindow); } catch {}
 
-  // Alt + D（仅窗口聚焦时）
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.alt && !input.control && !input.shift && String(input.key || '').toLowerCase() === 'd') {
       event.preventDefault(); toggleDevTools();
     }
   });
 
-  // 置顶状态同步
   mainWindow.webContents.on('did-finish-load', () => {
     try { mainWindow.webContents.send('toolbar:pin-state', pinnedAlwaysOnTop); } catch {}
   });
