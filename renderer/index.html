@@ -10,18 +10,23 @@
         background: #f5f6f7;
         -webkit-user-select: none;
       }
-      .titlebar { display: none }
+
+      .titlebar {
+        display: none
+      }
 
       /* 右侧自定义缩放条：可拖动改变宽度 */
       #edge-resizer-right {
         position: fixed;
         top: 0;
         right: 0;
-        width: 8px;        /* 命中区域 */
+        width: 8px;
+        /* 命中区域 */
         height: 100%;
         cursor: ew-resize;
         z-index: 9999;
-        background: transparent; /* 保持不可见 */
+        background: transparent;
+        /* 保持不可见 */
       }
     </style>
     <link rel="stylesheet" href="./css/header.css">
@@ -30,20 +35,25 @@
     <link rel="stylesheet" href="./css/aimodels.css">
   </head>
   <body>
-   
+
 
     <!-- Tabs bar -->
     <div class="tabbar" id="tabbar" role="tablist" aria-label="主功能选项卡">
-      <button class="tab-btn active" role="tab" id="tabbtn-phrases" aria-controls="tab-phrases" aria-selected="true" tabindex="0" data-tab="phrases">本地短语</button>
-      <button class="tab-btn" role="tab" id="tabbtn-ai" aria-controls="tab-ai" aria-selected="false" tabindex="-1" data-tab="ai">AI</button>
-      <button class="tab-btn" role="tab" id="tabbtn-models" aria-controls="tab-models" aria-selected="false" tabindex="-1" data-tab="models">AI模型</button>
-      <button class="tab-btn" role="tab" id="tabbtn-emojis" aria-controls="tab-emojis" aria-selected="false" tabindex="-1" data-tab="emojis">本地表情</button>
+      <button class="tab-btn active" role="tab" id="tabbtn-phrases" aria-controls="tab-phrases" aria-selected="true"
+        tabindex="0" data-tab="phrases">本地短语</button>
+      <button class="tab-btn" role="tab" id="tabbtn-ai" aria-controls="tab-ai" aria-selected="false" tabindex="-1"
+        data-tab="ai">AI</button>
+      <button class="tab-btn" role="tab" id="tabbtn-models" aria-controls="tab-models" aria-selected="false"
+        tabindex="-1" data-tab="models">AI模型</button>
+      <button class="tab-btn" role="tab" id="tabbtn-emojis" aria-controls="tab-emojis" aria-selected="false"
+        tabindex="-1" data-tab="emojis">本地表情</button>
     </div>
 
     <!-- Tabs content -->
     <div class="tabpanes">
       <!-- 本地短语 -->
-      <section class="tabpane active" role="tabpanel" id="tab-phrases" aria-labelledby="tabbtn-phrases" aria-hidden="false">
+      <section class="tabpane active" role="tabpanel" id="tab-phrases" aria-labelledby="tabbtn-phrases"
+        aria-hidden="false">
         <div class="phrase-cats" id="phrase-cats"></div>
         <div class="phrase-list" id="phrase-list"></div>
       </section>
@@ -63,10 +73,14 @@
       <section class="tabpane" role="tabpanel" id="tab-models" aria-labelledby="tabbtn-models" aria-hidden="true">
         <div class="aimodels">
           <div class="aimodels-tabs" id="aimodels-tabs" role="tablist" aria-label="AI模型站点">
-            <button class="aim-tab active" role="tab" aria-selected="true" tabindex="0" data-url="https://www.doubao.com/chat/">豆包</button>
-            <button class="aim-tab" role="tab" aria-selected="false" tabindex="-1" data-url="https://chatgpt.com/?hints=moonshine">ChatGPT</button>
-            <button class="aim-tab" role="tab" aria-selected="false" tabindex="-1" data-url="https://chat.deepseek.com/">DeepSeek</button>
-            <button class="aim-tab" role="tab" aria-selected="false" tabindex="-1" data-url="https://www.tongyi.com/qianwen">通义千问</button>
+            <button class="aim-tab active" role="tab" aria-selected="true" tabindex="0"
+              data-url="https://www.doubao.com/chat/">豆包</button>
+            <button class="aim-tab" role="tab" aria-selected="false" tabindex="-1"
+              data-url="https://chatgpt.com/?hints=moonshine">ChatGPT</button>
+            <button class="aim-tab" role="tab" aria-selected="false" tabindex="-1"
+              data-url="https://chat.deepseek.com/">DeepSeek</button>
+            <button class="aim-tab" role="tab" aria-selected="false" tabindex="-1"
+              data-url="https://www.tongyi.com/qianwen">通义千问</button>
           </div>
 
           <div class="aimodels-actions">
@@ -75,7 +89,8 @@
 
           <div class="aimodels-view">
             <div id="aimodels-host" class="aimodels-host"></div>
-            <iframe id="aimodels-fallback" hidden sandbox="allow-scripts allow-same-origin allow-forms allow-popups" referrerpolicy="no-referrer"></iframe>
+            <iframe id="aimodels-fallback" hidden sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              referrerpolicy="no-referrer"></iframe>
           </div>
           <div class="aimodels-tip" id="aimodels-tip">若网页在本窗口加载异常，可点击“在浏览器打开”。</div>
         </div>
@@ -118,9 +133,9 @@
     <div id="edge-resizer-right" aria-hidden="true"></div>
 
     <script src="./js/tabs.js"></script>
-    <script src="./js/aimodels.js"></script>
-    <script src="./js/ai.js"></script>
     <script src="./js/phrases.js"></script>
+    <script src="./js/ai.js"></script>
+    <script src="./js/aimodels.js"></script>
     <script src="./js/header.js"></script>
     <script src="./js/resize.js"></script>
   </body>
