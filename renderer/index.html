@@ -32,6 +32,7 @@
     <link rel="stylesheet" href="./css/header.css">
     <link rel="stylesheet" href="./css/phrases.css">
     <link rel="stylesheet" href="./css/tabs.css">
+    <link rel="stylesheet" href="./css/ai.css">
     <link rel="stylesheet" href="./css/aimodels.css">
   </head>
   <body>
@@ -60,12 +61,40 @@
 
       <!-- AI -->
       <section class="tabpane" role="tabpanel" id="tab-ai" aria-labelledby="tabbtn-ai" aria-hidden="true">
+        <!-- 类别栏 -->
+        <div class="ai-category-bar" id="ai-category-bar">
+          <button class="ai-cat-btn" data-cat="咨询中">咨询中</button>
+          <button class="ai-cat-btn" data-cat="已成交">已成交</button>
+          <button class="ai-cat-btn" data-cat="已结束">已结束</button>
+          <button class="ai-cat-btn" data-cat="退款中">退款中</button>
+        </div>
+
+        <!-- 客户昵称列表弹窗（默认隐藏，点击类别后出现） -->
+        <div class="ai-customer-list-popup" id="ai-customer-list-popup" style="display:none;">
+          <input type="text" id="ai-customer-search" placeholder="搜索客户昵称...">
+          <li data-id="1">
+            张三
+            <span class="circle-btns">
+              <button class="circle-btn" data-action="set-cat" data-cat="咨询中" title="设为询">询</button>
+              <button class="circle-btn" data-action="set-cat" data-cat="已成交" title="设为成">成</button>
+              <button class="circle-btn" data-action="set-cat" data-cat="退款中" title="设为退">退</button>
+              <button class="circle-btn" data-action="set-cat" data-cat="已结束" title="设为完">完</button>
+            </span>
+          </li>
+        </div>
+
+        <!-- 聊天记录展示区 -->
+        <!--     <div class="ai-chat-history" id="ai-chat-history"></div> -->
+
+        <!-- AI 问题编辑区 -->
         <div class="ai-input">
-          <textarea id="ai-context" placeholder="粘贴/输入上下文，点击‘生成建议’"></textarea>
+          <textarea id="ai-context" placeholder="请输入问题，AI将结合聊天上下文为你答复"></textarea>
           <div class="ai-actions">
             <button id="ai-generate">生成建议</button>
           </div>
         </div>
+
+        <!-- AI建议区 -->
         <ul class="ai-suggestions" id="ai-suggestions"></ul>
       </section>
 

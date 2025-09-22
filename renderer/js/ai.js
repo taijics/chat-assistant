@@ -1,5 +1,7 @@
 (function() {
-  const { ipcRenderer } = require('electron');
+  const {
+    ipcRenderer
+  } = require('electron');
 
   const STORAGE_KEY = 'phrases.data.v1';
   const SINGLE_CLICK_DELAY = 300;
@@ -30,17 +32,17 @@
   // 基础的 Markdown 清洗（保留换行，去掉强调/引用/链接标记等）
   function stripMarkdown(s) {
     return String(s || '')
-      .replace(/```[\s\S]*?```/g, '')                // 三引号代码块
-      .replace(/^#{1,6}\s+/gm, '')                   // 标题
-      .replace(/\*\*(.*?)\*\*/g, '$1')               // 粗体
-      .replace(/\*(.*?)\*/g, '$1')                   // 斜体
-      .replace(/^>\s?/gm, '')                        // 引用前缀
-      .replace(/!\[[^\]]*\]\([^)]+\)/g, '')          // 图片
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')       // 链接
-      .replace(/`([^`]+)`/g, '$1')                   // 行内代码
-      .replace(/[ \t]+\n/g, '\n')                    // 尾随空格
-      .replace(/\u00A0/g, ' ')                       // 不间断空格
-      .replace(/\n{3,}/g, '\n\n')                    // 多个空行压缩
+      .replace(/```[\s\S]*?```/g, '') // 三引号代码块
+      .replace(/^#{1,6}\s+/gm, '') // 标题
+      .replace(/\*\*(.*?)\*\*/g, '$1') // 粗体
+      .replace(/\*(.*?)\*/g, '$1') // 斜体
+      .replace(/^>\s?/gm, '') // 引用前缀
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, '') // 图片
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // 链接
+      .replace(/`([^`]+)`/g, '$1') // 行内代码
+      .replace(/[ \t]+\n/g, '\n') // 尾随空格
+      .replace(/\u00A0/g, ' ') // 不间断空格
+      .replace(/\n{3,}/g, '\n\n') // 多个空行压缩
       .trim();
   }
 
@@ -54,7 +56,10 @@
     const matches = [];
     let m;
     while ((m = re.exec(s)) !== null) {
-      matches.push({ index: m.index, title: m[3] || '' });
+      matches.push({
+        index: m.index,
+        title: m[3] || ''
+      });
     }
     if (matches.length) {
       for (let i = 0; i < matches.length; i++) {
@@ -69,9 +74,9 @@
 
         // 优先取引用块（> 开头的行），否则用“标题 + 正文”
         const quoteLines = body.split('\n').filter(l => l.trim().startsWith('>'));
-        const content = quoteLines.length
-          ? quoteLines.map(l => l.replace(/^\s*>\s?/, '')).join('\n')
-          : (title + (body ? '\n' + body : ''));
+        const content = quoteLines.length ?
+          quoteLines.map(l => l.replace(/^\s*>\s?/, '')).join('\n') :
+          (title + (body ? '\n' + body : ''));
 
         const cleaned = stripMarkdown(content);
         if (cleaned) matches[i].text = cleaned;
@@ -134,7 +139,10 @@
   // 保存到本地短语：归类到“默认”
   function savePhraseToLocal(style, text) {
     const content = normalizeText(text);
-    if (!content) return { saved: false, reason: 'empty' };
+    if (!content) return {
+      saved: false,
+      reason: 'empty'
+    };
 
     let data = null;
     try {
@@ -143,16 +151,24 @@
     } catch {
       data = null;
     }
-    if (!data || !Array.isArray(data.cats)) data = { cats: [] };
+    if (!data || !Array.isArray(data.cats)) data = {
+      cats: []
+    };
 
     let cat = data.cats.find(c => c.name === style);
     if (!cat) {
-      cat = { name: style, items: [] };
+      cat = {
+        name: style,
+        items: []
+      };
       data.cats.push(cat);
     }
 
     const exists = cat.items.some(it => normalizeText(it) === content);
-    if (exists) return { saved: false, reason: 'exists' };
+    if (exists) return {
+      saved: false,
+      reason: 'exists'
+    };
 
     cat.items.push(content);
 
@@ -162,10 +178,15 @@
 
     try {
       window.dispatchEvent(new CustomEvent('ai:saved-phrase', {
-        detail: { style, text: content }
+        detail: {
+          style,
+          text: content
+        }
       }));
     } catch {}
-    return { saved: true };
+    return {
+      saved: true
+    };
   }
 
   async function requestAiRaw(ctx) {
@@ -223,7 +244,9 @@
         // 成功返回并渲染后，清空输入框
         ta.value = '';
         try {
-          ta.dispatchEvent(new Event('input', { bubbles: true }));
+          ta.dispatchEvent(new Event('input', {
+            bubbles: true
+          }));
         } catch {}
       } finally {
         btn.disabled = false;
@@ -325,6 +348,214 @@
       ipcRenderer.send('phrase:paste-send', text); // 双击：粘贴并发送
     });
   }
+
+  // 新增交互
+  const categoryBar = document.getElementById('ai-category-bar');
+  const customerPopup = document.getElementById('ai-customer-list-popup');
+  const customerList = document.getElementById('ai-customer-list');
+  const customerSearch = document.getElementById('ai-customer-search');
+  const chatHistory = document.getElementById('ai-chat-history');
+  const aiContext = document.getElementById('ai-context');
+
+  // 假数据：可替换为数据库读取
+  const customers = [{
+      id: '1',
+      nickname: '张三',
+      category: '咨询中'
+    },
+    {
+      id: '2',
+      nickname: '李四',
+      category: '已成交'
+    },
+    {
+      id: '3',
+      nickname: '王五',
+      category: '已结束'
+    },
+    {
+      id: '4',
+      nickname: '赵六',
+      category: '退款中'
+    },
+    {
+      id: '5',
+      nickname: '小明',
+      category: '咨询中'
+    },
+  ];
+  const messages = {
+    '1': [{
+        sender: '张三',
+        time: '2025-09-21 13:23',
+        content: '你好，请问……'
+      },
+      {
+        sender: '我',
+        time: '2025-09-21 13:24',
+        content: '欢迎咨询'
+      }
+    ],
+    '2': [{
+        sender: '李四',
+        time: '2025-09-20 11:01',
+        content: '付款已完成'
+      },
+      {
+        sender: '我',
+        time: '2025-09-20 11:03',
+        content: '感谢您的支持'
+      }
+    ]
+    // 其它略...
+  };
+
+  let selectedCategory = '';
+  let filteredCustomerList = [];
+  let selectedCustomerId = '';
+
+  // 类别栏点击
+  categoryBar.addEventListener('click', (e) => {
+    const btn = e.target.closest('.ai-cat-btn');
+    if (!btn) return;
+
+    // 激活按钮
+    [...categoryBar.querySelectorAll('.ai-cat-btn')].forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedCategory = btn.dataset.cat;
+
+    // 筛选客户
+    filteredCustomerList = customers.filter(c => c.category === selectedCategory);
+    renderCustomerList(filteredCustomerList);
+    customerPopup.style.display = 'block';
+    selectedCustomerId = '';
+    chatHistory.innerHTML = '';
+  });
+
+  // 客户模糊搜索
+  customerSearch.addEventListener('input', () => {
+    const kw = customerSearch.value.trim();
+    let list = filteredCustomerList;
+    if (kw) list = list.filter(c => c.nickname.includes(kw));
+    renderCustomerList(list);
+  });
+
+  // 客户列表点击
+  customerList.addEventListener('click', (e) => {
+    const li = e.target.closest('li');
+    if (!li) return;
+    [...customerList.children].forEach(n => n.classList.remove('active'));
+    li.classList.add('active');
+    selectedCustomerId = li.dataset.id;
+
+    // 展示聊天历史
+    renderChatHistory(selectedCustomerId);
+    customerPopup.style.display = 'none';
+  });
+
+  function renderCustomerList(list) {
+    // 先定义所有类别和圈字
+    const categories = [{
+        label: "咨询中",
+        text: "询"
+      },
+      {
+        label: "已成交",
+        text: "成"
+      },
+      {
+        label: "退款中",
+        text: "退"
+      },
+      {
+        label: "已结束",
+        text: "完"
+      }
+    ];
+
+    customerList.innerHTML = list.map(c => {
+      // 只显示不属于当前类别的三个圈
+      const icons = categories
+        .filter(cat => cat.label !== selectedCategory)
+        .map(cat =>
+          `<button class="circle-btn" data-action="set-cat" data-cat="${cat.label}" title="设为${cat.text}">${cat.text}</button>`
+        ).join('');
+      return `<li data-id="${c.id}">
+      ${c.nickname}
+      <span class="circle-btns">${icons}</span>
+    </li>`;
+    }).join('');
+  }
+
+  function renderChatHistory(customerId) {
+    const msgs = messages[customerId] || [];
+    chatHistory.innerHTML = msgs.map(m =>
+      `<div><span style="color:#0078ff">${m.sender}</span> <span style="color:#aaa">${m.time}</span><br>${m.content}</div>`
+    ).join('');
+  }
+  // 监听全局点击事件，自动收起弹窗
+  document.addEventListener('click', function(e) {
+    const popup = document.getElementById('ai-customer-list-popup');
+    const categoryBar = document.getElementById('ai-category-bar');
+    // 如果弹窗未显示，忽略
+    if (!popup || popup.style.display === 'none') return;
+
+    // 判断点击是否在弹窗或类别栏内
+    const isInPopup = popup.contains(e.target);
+    const isInBar = categoryBar.contains(e.target);
+
+    if (!isInPopup && !isInBar) {
+      popup.style.display = 'none';
+    }
+  });
+  // AI请求时拼接上下文
+  document.getElementById('ai-generate').addEventListener('click', async () => {
+    if (!selectedCustomerId) {
+      alert('请先选择客户！');
+      return;
+    }
+    const ctxMsgs = messages[selectedCustomerId] || [];
+    const context = ctxMsgs.map(m => `${m.sender}: ${m.content}`).join('\n');
+    aiContext.value = context + '\n' + (aiContext.value || '');
+    // 触发已有AI生成流程...
+    // 这里可进一步集成你的AI接口
+  });
+
+  // 初始渲染（可选）
+  customerPopup.style.display = 'none';
+
+
+
+
+  // 客户列表点击（加类别切换）
+  customerList.addEventListener('click', (e) => {
+    const btn = e.target.closest('.circle-btn');
+    if (btn) {
+      const li = btn.closest('li');
+      if (!li) return;
+      const customerId = li.dataset.id;
+      const newCat = btn.dataset.cat;
+      // 假数据，实际应更新数据库
+      const customer = customers.find(c => c.id === customerId);
+      if (customer) {
+        customer.category = newCat;
+        // 重新筛选并渲染
+        filteredCustomerList = customers.filter(c => c.category === selectedCategory);
+        renderCustomerList(filteredCustomerList);
+      }
+      return;
+    }
+
+    // 其它点击逻辑（选中客户）
+    const li = e.target.closest('li');
+    if (!li) return;
+    [...customerList.children].forEach(n => n.classList.remove('active'));
+    li.classList.add('active');
+    selectedCustomerId = li.dataset.id;
+    renderChatHistory(selectedCustomerId);
+    customerPopup.style.display = 'none';
+  });
+
 
   window.addEventListener('DOMContentLoaded', () => {
     bindEventsOnce();
