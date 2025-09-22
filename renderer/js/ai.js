@@ -546,13 +546,23 @@
       return;
     }
 
-    // 其它点击逻辑（选中客户）
+    // 选中客户昵称
     const li = e.target.closest('li');
     if (!li) return;
+    // 选中样式
     [...customerList.children].forEach(n => n.classList.remove('active'));
     li.classList.add('active');
     selectedCustomerId = li.dataset.id;
-    renderChatHistory(selectedCustomerId);
+
+    // 只显示当前聊天对象昵称，不展示聊天历史
+    const customer = customers.find(c => c.id === selectedCustomerId);
+    if (customer) {
+      chatHistory.innerHTML = `<div style="font-size:16px;font-weight:bold;">当前聊天对象：${customer.nickname}</div>`;
+    } else {
+      chatHistory.innerHTML = '';
+    }
+
+    // 关闭弹窗
     customerPopup.style.display = 'none';
   });
 

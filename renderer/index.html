@@ -72,19 +72,11 @@
         <!-- 客户昵称列表弹窗（默认隐藏，点击类别后出现） -->
         <div class="ai-customer-list-popup" id="ai-customer-list-popup" style="display:none;">
           <input type="text" id="ai-customer-search" placeholder="搜索客户昵称...">
-          <li data-id="1">
-            张三
-            <span class="circle-btns">
-              <button class="circle-btn" data-action="set-cat" data-cat="咨询中" title="设为询">询</button>
-              <button class="circle-btn" data-action="set-cat" data-cat="已成交" title="设为成">成</button>
-              <button class="circle-btn" data-action="set-cat" data-cat="退款中" title="设为退">退</button>
-              <button class="circle-btn" data-action="set-cat" data-cat="已结束" title="设为完">完</button>
-            </span>
-          </li>
+          <ul id="ai-customer-list"></ul>
         </div>
 
         <!-- 聊天记录展示区 -->
-        <!--     <div class="ai-chat-history" id="ai-chat-history"></div> -->
+         <div class="ai-chat-history" id="ai-chat-history"></div>
 
         <!-- AI 问题编辑区 -->
         <div class="ai-input">
