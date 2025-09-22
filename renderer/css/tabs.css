@@ -6,7 +6,7 @@
 /* Tabs 头：水平页签 */
 .tabbar {
   display: flex;
-  gap: 6px;
+  justify-content: space-between;
   padding: 0 12px;
   background: #f6f7f9;
   border-bottom: 1px solid #ddd;
@@ -357,8 +357,14 @@
 }
 
 /* 追加：AI 编辑态样式优化（保留原有样式不变） */
-.ai-suggestions li { position: relative; }
-.ai-suggestions li .editor[hidden] { display: none; }
+.ai-suggestions li {
+  position: relative;
+}
+
+.ai-suggestions li .editor[hidden] {
+  display: none;
+}
+
 .ai-suggestions li .editor textarea {
   width: 100%;
   min-height: 80px;
@@ -371,10 +377,12 @@
   outline: none;
   box-sizing: border-box;
 }
+
 .ai-suggestions li .editor textarea:focus {
   border-color: #91caff;
-  box-shadow: 0 0 0 2px rgba(22,119,255,0.15);
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.15);
 }
+
 .ai-suggestions .btn-primary {
   border: 1px solid #1677ff;
   background: #1677ff;

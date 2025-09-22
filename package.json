@@ -5,7 +5,7 @@
   "author": "Your Name",
   "main": "main/index.js",
   "scripts": {
-    "start": "electron .",
+    "start": "set NODE_OPTIONS= && electron .",
     "postinstall": "electron-builder install-app-deps",
     "rebuild": "electron-rebuild -f -w node-window-manager",
     "build:win": "set CSC_IDENTITY_AUTO_DISCOVERY=false && set ELECTRON_BUILDER_DISABLE_CODE_SIGNING=true && electron-builder --win",

@@ -440,18 +440,7 @@
     renderCustomerList(list);
   });
 
-  // 客户列表点击
-  customerList.addEventListener('click', (e) => {
-    const li = e.target.closest('li');
-    if (!li) return;
-    [...customerList.children].forEach(n => n.classList.remove('active'));
-    li.classList.add('active');
-    selectedCustomerId = li.dataset.id;
 
-    // 展示聊天历史
-    renderChatHistory(selectedCustomerId);
-    customerPopup.style.display = 'none';
-  });
 
   function renderCustomerList(list) {
     // 先定义所有类别和圈字
@@ -565,7 +554,118 @@
     // 关闭弹窗
     customerPopup.style.display = 'none';
   });
+  // 智能体数据结构（可用 localStorage 存储）
+  let aiAgents = [
+    // 示例
+    // {
+    //   name: '豆包',
+    //   token: 'xxx',
+    //   botid: 'xxx',
+    //   expire: '2025-10-01'
+    // }
+  ];
 
+  // 智能体列表渲染
+  function renderAIAgentList() {
+    const agentList = document.getElementById('ai-agent-list');
+    if (!agentList) return;
+    const today = new Date().toISOString().slice(0, 10);
+    agentList.innerHTML = aiAgents.map((agent, idx) => {
+      const expired = agent.expire && agent.expire < today;
+      return `<span class="ai-agent-item${expired ? ' expired' : ''}" data-idx="${idx}" title="双击编辑">${agent.name}</span>`;
+    }).join('');
+  }
+
+  // 添加/编辑弹窗
+  function showAgentModal(mode, idx = null) {
+    const modal = document.getElementById('ai-agent-modal');
+    const title = document.getElementById('ai-agent-modal-title');
+    const inputName = document.getElementById('ai-agent-input-name');
+    const inputToken = document.getElementById('ai-agent-input-token');
+    const inputBotId = document.getElementById('ai-agent-input-botid');
+    const inputExpire = document.getElementById('ai-agent-input-expire');
+
+    if (mode === 'add') {
+      title.textContent = '添加智能体';
+      inputName.value = '';
+      inputToken.value = '';
+      inputBotId.value = '';
+      inputExpire.value = '';
+      modal.dataset.mode = 'add';
+      modal.dataset.idx = '';
+    } else if (mode === 'edit') {
+      const agent = aiAgents[idx];
+      title.textContent = '编辑智能体';
+      inputName.value = agent.name || '';
+      inputToken.value = agent.token || '';
+      inputBotId.value = agent.botid || '';
+      inputExpire.value = agent.expire || '';
+      modal.dataset.mode = 'edit';
+      modal.dataset.idx = idx;
+    }
+    modal.style.display = 'flex';
+  }
+
+  // 关闭弹窗
+  function hideAgentModal() {
+    const modal = document.getElementById('ai-agent-modal');
+    modal.style.display = 'none';
+    modal.dataset.mode = '';
+    modal.dataset.idx = '';
+  }
+
+  // 添加智能体按钮
+  document.getElementById('ai-agent-add-btn').onclick = () => showAgentModal('add');
+
+  // 智能体双击编辑
+  document.getElementById('ai-agent-list').ondblclick = (e) => {
+    const item = e.target.closest('.ai-agent-item');
+    if (item) {
+      showAgentModal('edit', item.dataset.idx);
+    }
+  };
+
+  // 弹窗确定/取消
+  document.getElementById('ai-agent-modal-ok').onclick = function() {
+    const modal = document.getElementById('ai-agent-modal');
+    const mode = modal.dataset.mode;
+    const idx = modal.dataset.idx;
+    const name = document.getElementById('ai-agent-input-name').value.trim();
+    const token = document.getElementById('ai-agent-input-token').value.trim();
+    const botid = document.getElementById('ai-agent-input-botid').value.trim();
+    const expire = document.getElementById('ai-agent-input-expire').value;
+    if (!name || !token || !botid || !expire) {
+      alert('请填写完整信息');
+      return;
+    }
+    if (mode === 'add') {
+      aiAgents.push({
+        name,
+        token,
+        botid,
+        expire
+      });
+    } else if (mode === 'edit' && idx !== '') {
+      aiAgents[idx] = {
+        name,
+        token,
+        botid,
+        expire
+      };
+    }
+    // 保存到 localStorage
+    localStorage.setItem('aiAgents', JSON.stringify(aiAgents));
+    renderAIAgentList();
+    hideAgentModal();
+  };
+  document.getElementById('ai-agent-modal-cancel').onclick = hideAgentModal;
+
+  // 页面加载时读取智能体数据
+  window.addEventListener('DOMContentLoaded', () => {
+    const agents = localStorage.getItem('aiAgents');
+    if (agents) aiAgents = JSON.parse(agents);
+    renderAIAgentList();
+  });
 
   window.addEventListener('DOMContentLoaded', () => {
     bindEventsOnce();

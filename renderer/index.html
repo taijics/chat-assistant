@@ -88,6 +88,12 @@
 
         <!-- AI建议区 -->
         <ul class="ai-suggestions" id="ai-suggestions"></ul>
+        
+          <!-- 智能体底部导航栏 -->
+        <div class="ai-agent-navbar" id="ai-agent-navbar">
+            <div class="ai-agent-list" id="ai-agent-list"></div>
+            <button class="ai-agent-add-btn" id="ai-agent-add-btn" title="添加智能体">+</button>
+          </div>
       </section>
 
       <!-- AI模型（BrowserView 承载） -->
@@ -116,6 +122,22 @@
           <div class="aimodels-tip" id="aimodels-tip">若网页在本窗口加载异常，可点击“在浏览器打开”。</div>
         </div>
       </section>
+      <!-- 智能体弹窗（添加/编辑） -->
+      <div class="ai-agent-modal" id="ai-agent-modal" style="display:none;">
+        <div class="ai-agent-modal-content">
+          <h3 id="ai-agent-modal-title">添加智能体</h3>
+          <label>名称：<input type="text" id="ai-agent-input-name"></label>
+          <label>Token：<input type="text" id="ai-agent-input-token"></label>
+          <label>Bot ID：<input type="text" id="ai-agent-input-botid"></label>
+          <label>过期时间：
+            <input type="date" id="ai-agent-input-expire">
+          </label>
+          <div class="ai-agent-modal-actions">
+            <button id="ai-agent-modal-ok">确定</button>
+            <button id="ai-agent-modal-cancel">取消</button>
+          </div>
+        </div>
+      </div>
 
       <!-- 本地表情 -->
       <section class="tabpane" role="tabpanel" id="tab-emojis" aria-labelledby="tabbtn-emojis" aria-hidden="true">

@@ -1,9 +1,9 @@
-
 .ai-category-bar {
   display: flex;
   margin-bottom: 8px;
   justify-content: space-between;
 }
+
 .ai-cat-btn {
   padding: 4px 16px;
   background: #eee;
@@ -11,10 +11,12 @@
   border-radius: 4px;
   cursor: pointer;
 }
+
 .ai-cat-btn.active {
   background: #0078ff;
   color: #fff;
 }
+
 .ai-customer-list-popup {
   position: absolute;
   left: 0;
@@ -28,27 +30,32 @@
   overflow-y: auto;
   padding: 8px;
 }
+
 #ai-customer-search {
   width: 100%;
   margin-bottom: 8px;
   box-sizing: border-box;
   padding: 4px;
 }
+
 #ai-customer-list {
   list-style: none;
   margin: 0;
   padding: 0;
 }
+
 #ai-customer-list li {
   padding: 4px 8px;
   cursor: pointer;
   border-radius: 3px;
 }
-#ai-customer-list li.active, #ai-customer-list li:hover {
+
+#ai-customer-list li.active,
+#ai-customer-list li:hover {
   background: #e9f5ff;
 }
+
 .ai-chat-history {
-  min-height: 100px;
   background: #f8f8f8;
   margin-bottom: 8px;
   padding: 8px;
@@ -64,6 +71,7 @@
   display: flex;
   gap: 4px;
 }
+
 .circle-btn {
   width: 22px;
   height: 22px;
@@ -77,8 +85,220 @@
   cursor: pointer;
   padding: 0;
 }
+
 .circle-btn:hover {
   background: #0078ff;
   color: #fff;
   border-color: #0050b3;
+}
+
+
+.ai-agent-navbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #f7f8fa;
+  border-top: 1px solid #eee;
+  display: flex;
+  align-items: center;
+  padding: 6px 16px;
+  height: 40px;
+  z-index: 999;
+}
+
+.ai-agent-list {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px 12px;
+  max-height: 33vh;               /* 最多向上扩展1/3屏 */
+  overflow-y: auto;
+}
+
+
+.ai-agent-item {
+  padding: 3px 16px;
+  background: #eee;
+  color: #222;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+  user-select: none;
+}
+
+.ai-agent-item.expired {
+  color: #bbb;
+  background: #f2f2f2;
+}
+
+.ai-agent-item:hover {
+  background: #0078ff;
+  color: #fff;
+}
+
+.ai-agent-add-btn {
+  margin-left: 12px;
+  font-size: 20px;
+  border: none;
+  background: #fff;
+  color: #0078ff;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  box-shadow: 0 1px 4px #0001;
+  cursor: pointer;
+}
+
+.ai-agent-modal {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.2);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-agent-modal-content {
+  background: #fff;
+  border-radius: 8px;
+  padding: 28px 32px;
+  min-width: 320px;
+  box-shadow: 0 4px 16px #0002;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ai-agent-modal-content label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 0 0;
+}
+
+.ai-agent-modal-actions {
+  display: flex;
+  gap: 18px;
+  margin-top: 12px;
+  justify-content: flex-end;
+}
+
+.ai-agent-modal-actions button {
+  padding: 4px 18px;
+  border: none;
+  border-radius: 4px;
+  background: #0078ff;
+  color: #fff;
+  cursor: pointer;
+}
+
+.ai-agent-modal-actions button:last-child {
+  background: #eee;
+  color: #777;
+}
+
+
+.ai-agent-modal-content {
+  background: #fff;
+  border-radius: 16px;
+  padding: 36px 40px 30px 40px;
+  min-width: 340px;
+  box-shadow: 0 8px 32px #0002;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  font-size: 16px;
+  position: relative;
+}
+
+.ai-agent-modal-content h3 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 18px 0;
+  color: #222;
+  letter-spacing: 1px;
+}
+
+.ai-agent-modal-content label {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 12px;
+  font-size: 16px;
+  color: #222;
+  font-weight: 500;
+}
+
+.ai-agent-modal-content input[type="text"],
+.ai-agent-modal-content input[type="date"] {
+  flex: 1;
+  font-size: 15px;
+  padding: 7px 12px;
+  border-radius: 7px;
+  border: 1.5px solid #d1d5db;
+  background: #f7f8fa;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  outline: none;
+}
+
+.ai-agent-modal-content input[type="text"]:focus,
+.ai-agent-modal-content input[type="date"]:focus {
+  border-color: #339af0;
+  box-shadow: 0 0 0 2px #e3f0ff;
+  background: #fff;
+}
+
+.ai-agent-modal-content input[type="date"]::-webkit-input-placeholder {
+  color: #aaa;
+  font-size: 14px;
+}
+
+.ai-agent-modal-actions {
+  display: flex;
+  gap: 18px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+
+.ai-agent-modal-actions button {
+  padding: 7px 32px;
+  border: none;
+  border-radius: 7px;
+  font-size: 16px;
+  font-weight: 600;
+  background: #339af0;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 1px 4px #0001;
+  transition: background 0.2s, color 0.2s;
+}
+
+.ai-agent-modal-actions button:last-child {
+  background: #f2f2f2;
+  color: #888;
+  border: 1px solid #eaeaea;
+}
+
+.ai-agent-modal-actions button:hover {
+  background: #1c7ed6;
+}
+
+.ai-agent-modal-actions button:last-child:hover {
+  background: #e9ecef;
+  color: #666;
+}
+
+/* 响应式优化 */
+@media (max-width: 600px) {
+  .ai-agent-modal-content {
+    min-width: 92vw;
+    padding: 18px 8vw;
+    font-size: 15px;
+  }
 }
