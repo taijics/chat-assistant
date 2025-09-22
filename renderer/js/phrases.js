@@ -281,43 +281,43 @@
     renderList();
   }
 
-  function renderList() {
-    const listWrap = $('#phrase-list');
-    if (!listWrap) return;
-    const cat = data.cats.find(c => c.name === activeCat);
-    const items = cat ? cat.items : [];
+function renderList() {
+  const listWrap = $('#phrase-list');
+  if (!listWrap) return;
+  const cat = data.cats.find(c => c.name === activeCat);
+  const items = cat ? cat.items : [];
 
-    listWrap.innerHTML = '';
-    const BATCH = 120; // 每帧渲染 120 条，可按机器调
-    let i = 0;
+  listWrap.innerHTML = '';
+  const BATCH = 120; // 每帧渲染 120 条，可按机器调
+  let i = 0;
 
-    function appendBatch() {
-      const frag = document.createDocumentFragment();
-      for (let n = 0; n < BATCH && i < items.length; n++, i++) {
-        const t = items[i];
-        const el = document.createElement('div');
-        el.className = 'phrase-item';
-        el.setAttribute('data-text', String(t).replace(/"/g, '&quot;'));
-        el.title = '单击：粘贴到微信；双击：粘贴并发送';
+  function appendBatch() {
+    const frag = document.createDocumentFragment();
+    for (let n = 0; n < BATCH && i < items.length; n++, i++) {
+      const t = items[i];
+      const el = document.createElement('div');
+      el.className = 'phrase-item';
+      el.setAttribute('data-text', String(t).replace(/"/g, '&quot;'));
+      el.title = '单击：粘贴到微信；双击：粘贴并发送';
 
-        const textDiv = document.createElement('div');
-        textDiv.className = 'text';
-        textDiv.textContent = t;
+      const textDiv = document.createElement('div');
+      textDiv.className = 'text';
+      textDiv.textContent = t;
 
-        const metaDiv = document.createElement('div');
-        metaDiv.className = 'meta';
-        metaDiv.textContent = activeCat;
+      const metaDiv = document.createElement('div');
+      metaDiv.className = 'meta';
+      metaDiv.textContent = activeCat;
 
-        el.appendChild(textDiv);
-        el.appendChild(metaDiv);
-        frag.appendChild(el);
-      }
-      listWrap.appendChild(frag);
-      if (i < items.length) requestAnimationFrame(appendBatch);
+      el.appendChild(textDiv);
+      el.appendChild(metaDiv);
+      frag.appendChild(el);
     }
-
-    requestAnimationFrame(appendBatch);
+    listWrap.appendChild(frag);
+    if (i < items.length) requestAnimationFrame(appendBatch);
   }
+
+  requestAnimationFrame(appendBatch);
+}
 
   function bindListEventsOnce() {
     if (listEventsBound) return;
