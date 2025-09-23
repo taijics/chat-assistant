@@ -1,0 +1,19 @@
+.baidu-token-modal input {
+  background: #f7f8fa;
+  border-radius: 6px;
+  color: #222;
+  border: 1.5px solid #eee;
+  font-size: 16px;
+}
+.baidu-token-modal button {
+  background: #1677ff;
+  border-radius: 6px;
+  color: #fff;
+  border: none;
+  font-size: 15px;
+  cursor: pointer;
+}
+.baidu-token-modal button:last-child {
+  background: #eee;
+  color: #333;
+}
