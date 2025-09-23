@@ -65,7 +65,6 @@
   overflow-y: auto;
 }
 
-
 .circle-btns {
   float: right;
   display: flex;
@@ -92,66 +91,153 @@
   border-color: #0050b3;
 }
 
-
+/* 智能体底部导航栏 */
 .ai-agent-navbar {
-  position: absolute;
+  position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
   background: #f7f8fa;
   border-top: 1px solid #eee;
-  display: flex;
-  align-items: center;
-  padding: 6px 16px;
-  height: 40px;
   z-index: 999;
+  box-shadow: 0 -2px 12px #0001;
+  padding: 10px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  height: 25px;
 }
 
-.ai-agent-list {
-  flex: 1;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 14px 12px;
-  max-height: 33vh;               /* 最多向上扩展1/3屏 */
+.ai-agent-selected-btn {
+  min-width: 80px;
+  background: #1677ff;
+  border-radius: 6px;
+  color: #fff;
+  border: none;
+  padding: 5px 6px 5px 10px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px #0001;
+  transition: background 0.2s;
+  margin-right: 10px;
+  letter-spacing: 2px;
+}
+
+.ai-agent-selected-btn:after {
+  content: " ▼";
+  font-size: 15px;
+}
+
+.ai-agent-dropdown {
+  position: absolute;
+  left: 18px;
+  bottom: 68px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 4px 24px #0003;
+  padding: 12px 0 12px 0;
+  min-width: 240px;
+  z-index: 1200;
+  border: 1px solid #eee;
+  animation: agent-dropdown-in 0.18s;
+}
+
+@keyframes agent-dropdown-in {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.ai-agent-dropdown-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
   overflow-y: auto;
 }
 
-
-.ai-agent-item {
-  padding: 3px 16px;
-  background: #eee;
-  color: #222;
-  border-radius: 12px;
+.ai-agent-dropdown-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 22px 9px 18px;
+  font-size: 16px;
   cursor: pointer;
-  transition: background 0.2s;
-  user-select: none;
+  transition: background 0.17s, color 0.15s;
+  border-bottom: 1px solid #f2f2f2;
+  background: #fff;
 }
 
-.ai-agent-item.expired {
+.ai-agent-dropdown-list li:last-child {
+  border-bottom: none;
+}
+
+.ai-agent-dropdown-list li.selected {
+  background: #e3f0ff;
+  color: #339af0;
+}
+
+.ai-agent-dropdown-list li.expired {
   color: #bbb;
-  background: #f2f2f2;
 }
 
-.ai-agent-item:hover {
-  background: #0078ff;
-  color: #fff;
+.ai-agent-dropdown-list .agent-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.agent-edit-btn,
+.agent-delete-btn {
+  border: none;
+  background: transparent;
+  color: #888;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 5px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.agent-edit-btn:hover {
+  color: #339af0;
+  background: #eaf4ff;
+}
+
+.agent-delete-btn:hover {
+  color: #d81b60;
+  background: #ffe5ed;
 }
 
 .ai-agent-add-btn {
-  margin-left: 12px;
-  font-size: 20px;
   border: none;
-  background: #fff;
-  color: #0078ff;
+  background: #f7f8fa;
+  color: #339af0;
   border-radius: 50%;
-  width: 28px;
-  height: 28px;
-  box-shadow: 0 1px 4px #0001;
+  width: 32px;
+  height: 32px;
+  font-size: 22px;
+  font-weight: 700;
   cursor: pointer;
+  box-shadow: 0 1px 4px #0001;
+  margin-left: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s;
 }
 
-.ai-agent-modal {
+.ai-agent-add-btn:hover {
+  background: #eaf4ff;
+}
+
+.ai-agent-modal,
+.ai-agent-confirm-modal {
   position: fixed;
   left: 0;
   top: 0;
@@ -166,49 +252,9 @@
 
 .ai-agent-modal-content {
   background: #fff;
-  border-radius: 8px;
-  padding: 28px 32px;
-  min-width: 320px;
-  box-shadow: 0 4px 16px #0002;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.ai-agent-modal-content label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0 0 0;
-}
-
-.ai-agent-modal-actions {
-  display: flex;
-  gap: 18px;
-  margin-top: 12px;
-  justify-content: flex-end;
-}
-
-.ai-agent-modal-actions button {
-  padding: 4px 18px;
-  border: none;
-  border-radius: 4px;
-  background: #0078ff;
-  color: #fff;
-  cursor: pointer;
-}
-
-.ai-agent-modal-actions button:last-child {
-  background: #eee;
-  color: #777;
-}
-
-
-.ai-agent-modal-content {
-  background: #fff;
   border-radius: 16px;
-  padding: 36px 40px 30px 40px;
-  min-width: 340px;
+  padding: 22px 15px 24px 15px;
+  min-width: 280px;
   box-shadow: 0 8px 32px #0002;
   display: flex;
   flex-direction: column;
@@ -254,11 +300,6 @@
   background: #fff;
 }
 
-.ai-agent-modal-content input[type="date"]::-webkit-input-placeholder {
-  color: #aaa;
-  font-size: 14px;
-}
-
 .ai-agent-modal-actions {
   display: flex;
   gap: 18px;
@@ -292,13 +333,4 @@
 .ai-agent-modal-actions button:last-child:hover {
   background: #e9ecef;
   color: #666;
-}
-
-/* 响应式优化 */
-@media (max-width: 600px) {
-  .ai-agent-modal-content {
-    min-width: 92vw;
-    padding: 18px 8vw;
-    font-size: 15px;
-  }
 }

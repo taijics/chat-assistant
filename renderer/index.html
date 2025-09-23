@@ -76,7 +76,7 @@
         </div>
 
         <!-- 聊天记录展示区 -->
-         <div class="ai-chat-history" id="ai-chat-history"></div>
+        <div class="ai-chat-history" id="ai-chat-history"></div>
 
         <!-- AI 问题编辑区 -->
         <div class="ai-input">
@@ -88,12 +88,43 @@
 
         <!-- AI建议区 -->
         <ul class="ai-suggestions" id="ai-suggestions"></ul>
-        
-          <!-- 智能体底部导航栏 -->
+
+        <!-- 智能体底部导航栏 -->
         <div class="ai-agent-navbar" id="ai-agent-navbar">
-            <div class="ai-agent-list" id="ai-agent-list"></div>
+          <button class="ai-agent-selected-btn" id="ai-agent-selected-btn">智能体</button>
+          <div class="ai-agent-dropdown" id="ai-agent-dropdown" style="display:none;">
+            <ul class="ai-agent-dropdown-list" id="ai-agent-dropdown-list"></ul>
             <button class="ai-agent-add-btn" id="ai-agent-add-btn" title="添加智能体">+</button>
           </div>
+        </div>
+
+        <!-- 智能体弹窗（添加/编辑） -->
+        <div class="ai-agent-modal" id="ai-agent-modal" style="display:none;">
+          <div class="ai-agent-modal-content">
+            <h3 id="ai-agent-modal-title">添加智能体</h3>
+            <label>名称：<input type="text" id="ai-agent-input-name"></label>
+            <label>Token：<input type="text" id="ai-agent-input-token"></label>
+            <label>Bot ID：<input type="text" id="ai-agent-input-botid"></label>
+            <label>过期时间：
+              <input type="date" id="ai-agent-input-expire">
+            </label>
+            <div class="ai-agent-modal-actions">
+              <button id="ai-agent-modal-ok">确定</button>
+              <button id="ai-agent-modal-cancel">取消</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 删除确认弹窗 -->
+        <div class="ai-agent-confirm-modal" id="ai-agent-confirm-modal" style="display:none;">
+          <div class="ai-agent-modal-content">
+            <h3>确定删除该智能体？</h3>
+            <div style="margin-top:16px; text-align:right;">
+              <button id="ai-agent-confirm-ok">删除</button>
+              <button id="ai-agent-confirm-cancel">取消</button>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- AI模型（BrowserView 承载） -->
