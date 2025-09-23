@@ -72,7 +72,8 @@
     "electron-builder": "^24.13.3"
   },
   "dependencies": {
-    "node-window-manager": "^2.2.4",
-    "extract-file-icon": "^0.3.2"
+    "extract-file-icon": "^0.3.2",
+    "node-fetch": "^2.7.0",
+    "node-window-manager": "^2.2.4"
   }
 }
