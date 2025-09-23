@@ -1,21 +1,23 @@
-const { ipcRenderer, shell } = require('electron');
+const {
+  ipcRenderer,
+  shell
+} = require('electron');
 
-// 聊天用户识别（如未设置token则提示）
+const WechatOcrTool = require('./wechatOcrTool');
+
 ipcRenderer.on('menu:recognize-wechat-users', async () => {
   let token = localStorage.getItem('baiduOcrToken') || '';
   if (!token) {
     alert('请先设置百度OCR接口信息！');
     return;
   }
-  // 动态引入工具类
-  const WechatOcrTool = require('./tools/wechatOcrTool');
   WechatOcrTool.OCR_ACCESS_TOKEN = token;
   const users = await WechatOcrTool.captureAndRecognize();
   if (users && users.length) {
     alert('识别成功！前50个微信客户：\n' + users.join('\n'));
     // TODO: 自动保存到客户表
   } else {
-    alert('未识别到微信客户，请确认微信窗口已打开且客户昵称可见。');
+    // 此处不再需要弹窗，工具类里已弹出 OCR 原始结果
   }
 });
 
@@ -56,7 +58,8 @@ function showBaiduTokenModal() {
       </div>
     </div>
   `;
-  modal.style = `position:fixed;top:0;left:0;right:0;bottom:0;z-index:3000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.18);`;
+  modal.style =
+    `position:fixed;top:0;left:0;right:0;bottom:0;z-index:3000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.18);`;
   document.body.appendChild(modal);
 
   // 取消按钮
@@ -98,8 +101,11 @@ function showBaiduTokenModal() {
 
 // 获取百度access_token
 async function fetchBaiduOcrToken(apiKey, secretKey) {
-  const url = `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${apiKey}&client_secret=${secretKey}`;
-  const res = await fetch(url, { method: 'POST' });
+  const url =
+    `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${apiKey}&client_secret=${secretKey}`;
+  const res = await fetch(url, {
+    method: 'POST'
+  });
   const data = await res.json();
   return data.access_token || '';
 }

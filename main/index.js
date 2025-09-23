@@ -2,7 +2,6 @@ const {
   app
 } = require('electron');
 app.setPath('userData', 'D:\\chat-assistant-userdata'); // 确保该目录你有完全读写权限
-const WechatOcrTool = require('../tools/wechatOcrTool'); // 如果需要主进程用
 const {
   BrowserWindow,
   ipcMain,
@@ -13,7 +12,6 @@ const {
   Menu,
   nativeImage
 } = require('electron');
-
 function setBaiduOcrToken(token) {
   global.baiduOcrToken = token;
 }
@@ -227,7 +225,7 @@ function createMainWindow() {
     minHeight: MIN_HEIGHT,
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: false,
     }
   });
 
