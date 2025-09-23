@@ -17,3 +17,90 @@
   background: #eee;
   color: #333;
 }
+
+.baidu-token-modal-content {
+  background: #fff;
+  padding: 20px;
+  border-radius: 24px;
+  box-shadow: 0 4px 32px #0001;
+  min-width: 300px;
+  max-width: 320px;
+}
+.baidu-token-modal-title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-bottom: 28px;
+  letter-spacing: 0.5px;
+}
+.baidu-token-label {
+  display: block;
+  font-size: 1.1rem;
+  margin-bottom: 16px;
+}
+.baidu-token-input {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  font-size: 1rem;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1.5px solid #e4e7ed;
+  background: #f7f8fa;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+.baidu-token-input:focus {
+  border-color: #1677ff;
+}
+.baidu-token-tip {
+  font-size: 1rem;
+  color: #666;
+  margin-bottom: 20px;
+}
+.baidu-token-tip2 {
+  margin-top: 22px;
+  font-size: 0.98rem;
+  color: #888;
+}
+.baidu-token-actions {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 8px;
+  margin-top: 18px;
+}
+.baidu-token-btn-primary {
+  background: #1677ff;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1.12rem;
+  padding: 9px 34px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px #1677ff22;
+  transition: background 0.2s;
+}
+.baidu-token-btn-primary:hover {
+  background: #005ce6;
+}
+.baidu-token-btn {
+  background: #f0f2f5;
+  color: #333;
+  border: none;
+  border-radius: 8px;
+  font-size: 1.12rem;
+  padding: 9px 34px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.baidu-token-btn:hover {
+  background: #e4e7ed;
+}
+
+.baidu-token-modal-content,
+.baidu-token-modal-content input {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
