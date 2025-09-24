@@ -1,5 +1,7 @@
 (function() {
-  const { ipcRenderer } = require('electron');
+  const {
+    ipcRenderer
+  } = require('electron');
   const STORAGE_KEY = 'phrases.data.v1';
   const SINGLE_CLICK_DELAY = 300;
 
@@ -49,7 +51,10 @@
     const matches = [];
     let m;
     while ((m = re.exec(s)) !== null) {
-      matches.push({ index: m.index, title: m[3] || '' });
+      matches.push({
+        index: m.index,
+        title: m[3] || ''
+      });
     }
     if (matches.length) {
       for (let i = 0; i < matches.length; i++) {
@@ -112,34 +117,57 @@
 
   function savePhraseToLocal(style, text) {
     const content = normalizeText(text);
-    if (!content) return { saved: false, reason: 'empty' };
+    if (!content) return {
+      saved: false,
+      reason: 'empty'
+    };
     let data = null;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       data = raw ? JSON.parse(raw) : null;
-    } catch { data = null; }
-    if (!data || !Array.isArray(data.cats)) data = { cats: [] };
+    } catch {
+      data = null;
+    }
+    if (!data || !Array.isArray(data.cats)) data = {
+      cats: []
+    };
     let cat = data.cats.find(c => c.name === style);
     if (!cat) {
-      cat = { name: style, items: [] };
+      cat = {
+        name: style,
+        items: []
+      };
       data.cats.push(cat);
     }
     const exists = cat.items.some(it => normalizeText(it) === content);
-    if (exists) return { saved: false, reason: 'exists' };
+    if (exists) return {
+      saved: false,
+      reason: 'exists'
+    };
     cat.items.push(content);
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch {}
     try {
       window.dispatchEvent(new CustomEvent('ai:saved-phrase', {
-        detail: { style, text: content }
+        detail: {
+          style,
+          text: content
+        }
       }));
     } catch {}
-    return { saved: true };
+    return {
+      saved: true
+    };
   }
 
-  async function requestAiRaw(ctx) {
+  async function requestAiRaw(ctx, agentConfig) {
     const prompt = String(ctx || '');
     try {
-      const res = await ipcRenderer.invoke('ai:generate', { prompt });
+      const res = await ipcRenderer.invoke('ai:generate', {
+        prompt,
+        agentConfig
+      });
       if (!res) throw new Error('empty response');
       const text = String(res.text || res.debug?.finalText || '');
       return normalizeText(text);
@@ -147,6 +175,18 @@
       console.warn('ai:generate error:', e && e.message);
       return '';
     }
+  }
+
+  function getSelectedAgentConfig() {
+    if (typeof selectedAgentIdx === 'number' && aiAgents[selectedAgentIdx]) {
+      const agent = aiAgents[selectedAgentIdx];
+      return {
+        token: agent.token,
+        botId: agent.botid,
+        userId: '123456789'
+      };
+    }
+    return null;
   }
 
   function bindEventsOnce() {
@@ -162,11 +202,16 @@
       btn.disabled = true;
       btn.textContent = '生成中…';
       try {
-        const finalText = await requestAiRaw(ta.value);
+        const agentConfig = getSelectedAgentConfig();
+        const finalText = await requestAiRaw(ta.value, agentConfig);
         const items = parseSuggestionsFromText(finalText);
         renderSuggestions(items);
         ta.value = '';
-        try { ta.dispatchEvent(new Event('input', { bubbles: true })); } catch {}
+        try {
+          ta.dispatchEvent(new Event('input', {
+            bubbles: true
+          }));
+        } catch {}
       } finally {
         btn.disabled = false;
         btn.textContent = orig;
@@ -266,21 +311,54 @@
   const chatHistory = document.getElementById('ai-chat-history');
   const aiContext = document.getElementById('ai-context');
 
-  const customers = [
-    { id: '1', nickname: '张三', category: '咨询中' },
-    { id: '2', nickname: '李四', category: '已成交' },
-    { id: '3', nickname: '王五', category: '已结束' },
-    { id: '4', nickname: '赵六', category: '退款中' },
-    { id: '5', nickname: '小明', category: '咨询中' },
+  const customers = [{
+      id: '1',
+      nickname: '张三',
+      category: '咨询中'
+    },
+    {
+      id: '2',
+      nickname: '李四',
+      category: '已成交'
+    },
+    {
+      id: '3',
+      nickname: '王五',
+      category: '已结束'
+    },
+    {
+      id: '4',
+      nickname: '赵六',
+      category: '退款中'
+    },
+    {
+      id: '5',
+      nickname: '小明',
+      category: '咨询中'
+    },
   ];
   const messages = {
-    '1': [
-      { sender: '张三', time: '2025-09-21 13:23', content: '你好，请问……' },
-      { sender: '我', time: '2025-09-21 13:24', content: '欢迎咨询' }
+    '1': [{
+        sender: '张三',
+        time: '2025-09-21 13:23',
+        content: '你好，请问……'
+      },
+      {
+        sender: '我',
+        time: '2025-09-21 13:24',
+        content: '欢迎咨询'
+      }
     ],
-    '2': [
-      { sender: '李四', time: '2025-09-20 11:01', content: '付款已完成' },
-      { sender: '我', time: '2025-09-20 11:03', content: '感谢您的支持' }
+    '2': [{
+        sender: '李四',
+        time: '2025-09-20 11:01',
+        content: '付款已完成'
+      },
+      {
+        sender: '我',
+        time: '2025-09-20 11:03',
+        content: '感谢您的支持'
+      }
     ]
     // ...
   };
@@ -310,11 +388,22 @@
   });
 
   function renderCustomerList(list) {
-    const categories = [
-      { label: "咨询中", text: "询" },
-      { label: "已成交", text: "成" },
-      { label: "退款中", text: "退" },
-      { label: "已结束", text: "完" }
+    const categories = [{
+        label: "咨询中",
+        text: "询"
+      },
+      {
+        label: "已成交",
+        text: "成"
+      },
+      {
+        label: "退款中",
+        text: "退"
+      },
+      {
+        label: "已结束",
+        text: "完"
+      }
     ];
     customerList.innerHTML = list.map(c => {
       const icons = categories
@@ -345,10 +434,6 @@
   });
 
   document.getElementById('ai-generate').addEventListener('click', async () => {
-    if (!selectedCustomerId) {
-      alert('请先选择客户！');
-      return;
-    }
     const ctxMsgs = messages[selectedCustomerId] || [];
     const context = ctxMsgs.map(m => `${m.sender}: ${m.content}`).join('\n');
     aiContext.value = context + '\n' + (aiContext.value || '');
@@ -522,10 +607,20 @@
       return;
     }
     if (mode === 'add') {
-      aiAgents.push({ name, token, botid, expire });
+      aiAgents.push({
+        name,
+        token,
+        botid,
+        expire
+      });
       selectedAgentIdx = aiAgents.length - 1;
     } else if (mode === 'edit' && idx !== '') {
-      aiAgents[idx] = { name, token, botid, expire };
+      aiAgents[idx] = {
+        name,
+        token,
+        botid,
+        expire
+      };
       selectedAgentIdx = Number(idx);
     }
     localStorage.setItem('aiAgents', JSON.stringify(aiAgents));

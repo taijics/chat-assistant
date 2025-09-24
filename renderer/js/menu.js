@@ -3,7 +3,7 @@ const {
   shell
 } = require('electron');
 
-const WechatOcrTool = require('./wechatOcrTool');
+/* const WechatOcrTool = require('./wechatOcrTool');
 
 ipcRenderer.on('menu:recognize-wechat-users', async () => {
   let token = localStorage.getItem('baiduOcrToken') || '';
@@ -19,7 +19,7 @@ ipcRenderer.on('menu:recognize-wechat-users', async () => {
   } else {
     // 此处不再需要弹窗，工具类里已弹出 OCR 原始结果
   }
-});
+}); */
 
 // 百度OCR弹窗（优化样式，自动获取token）
 ipcRenderer.on('menu:baidu-token', () => {

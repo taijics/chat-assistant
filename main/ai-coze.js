@@ -1,9 +1,13 @@
 // main/ai-coze.js
 // 直接用用户原话调用 Coze，过滤中间消息，仅取最终回答；把调试信息发送到渲染端控制台（UTF-8）
 
-const { ipcMain } = require('electron');
+const {
+  ipcMain
+} = require('electron');
 const https = require('https');
-const { URL } = require('url');
+const {
+  URL
+} = require('url');
 const path = require('path');
 
 const API_URL = 'https://api.coze.cn/v3/chat';
@@ -12,10 +16,15 @@ const MESSAGE_LIST_URL = 'https://api.coze.cn/v3/chat/message/list';
 
 // 记录主窗口用于把日志发到渲染端（UTF-8 控制台）
 let mainWinRef = null;
+
 function sendDebug(tag, payload) {
   try {
     if (mainWinRef && !mainWinRef.isDestroyed()) {
-      mainWinRef.webContents.send('ai:debug-log', { tag, time: Date.now(), ...payload });
+      mainWinRef.webContents.send('ai:debug-log', {
+        tag,
+        time: Date.now(),
+        ...payload
+      });
     }
   } catch {}
 }
@@ -29,9 +38,9 @@ let CONFIG = {
 
 function tryLoadLocalConfig() {
   const candidates = [
-    'ai-coze.config.local.js',   // 点号风格（默认）
-    'ai-coze-config-local.js',   // 破折号风格（你在用）
-    'ai_coze.config.local.js'    // 下划线风格（备选）
+    'ai-coze.config.local.js', // 点号风格（默认）
+    'ai-coze-config-local.js', // 破折号风格（你在用）
+    'ai_coze.config.local.js' // 下划线风格（备选）
   ];
   for (const name of candidates) {
     try {
@@ -39,20 +48,30 @@ function tryLoadLocalConfig() {
       // eslint-disable-next-line import/no-dynamic-require, global-require
       const cfg = require(p);
       if (cfg && typeof cfg === 'object') {
-        CONFIG = { ...CONFIG, ...cfg };
+        CONFIG = {
+          ...CONFIG,
+          ...cfg
+        };
         return name; // 命中的文件名
       }
-    } catch { /* 未命中忽略 */ }
+    } catch {
+      /* 未命中忽略 */ }
   }
   return null;
 }
 const loadedFrom = tryLoadLocalConfig();
 try {
-  console.log('[coze] config source:', loadedFrom || 'env-only', 'tokenLen:', (CONFIG.token || '').length, 'botId:', CONFIG.botId || '(none)');
+  console.log('[coze] config source:', loadedFrom || 'env-only', 'tokenLen:', (CONFIG.token || '').length, 'botId:',
+    CONFIG.botId || '(none)');
 } catch {}
 
 // 2) 基础 HTTPS JSON
-function httpJSON(method, urlStr, { headers = {}, body = null, query = null, timeoutMs = 15000 } = {}) {
+function httpJSON(method, urlStr, {
+  headers = {},
+  body = null,
+  query = null,
+  timeoutMs = 15000
+} = {}) {
   return new Promise((resolve, reject) => {
     try {
       const url = new URL(urlStr);
@@ -62,7 +81,12 @@ function httpJSON(method, urlStr, { headers = {}, body = null, query = null, tim
         });
       }
 
-      const opts = { method, headers: { ...headers } };
+      const opts = {
+        method,
+        headers: {
+          ...headers
+        }
+      };
 
       const req = https.request(url, opts, (res) => {
         let data = '';
@@ -71,9 +95,19 @@ function httpJSON(method, urlStr, { headers = {}, body = null, query = null, tim
         res.on('end', () => {
           try {
             const json = data ? JSON.parse(data) : null;
-            resolve({ statusCode: res.statusCode, data: json, raw: data });
+            resolve({
+              statusCode: res.statusCode,
+              data: json,
+              raw: data
+            });
           } catch {
-            resolve({ statusCode: res.statusCode, data: { raw: data }, raw: data });
+            resolve({
+              statusCode: res.statusCode,
+              data: {
+                raw: data
+              },
+              raw: data
+            });
           }
         });
       });
@@ -96,7 +130,11 @@ function httpJSON(method, urlStr, { headers = {}, body = null, query = null, tim
 
 // 3) Coze 三步流（直接用原话）
 async function triggerChat(prompt) {
-  const { token, botId, userId } = CONFIG;
+  const {
+    token,
+    botId,
+    userId
+  } = CONFIG;
   if (!token) throw new Error('COZE_TOKEN is missing');
   if (!botId) throw new Error('COZE_BOT_ID is missing');
 
@@ -108,36 +146,51 @@ async function triggerChat(prompt) {
     bot_id: botId,
     user_id: userId || 'chat-assistant-user',
     stream: false,
-    additional_messages: [
-      {
-        content: String(prompt || ''),
-        content_type: 'text',
-        role: 'user',
-        type: 'question',
-      },
-    ],
+    additional_messages: [{
+      content: String(prompt || ''),
+      content_type: 'text',
+      role: 'user',
+      type: 'question',
+    }, ],
     parameters: {},
   };
 
-  const res = await httpJSON('POST', API_URL, { headers, body, timeoutMs: 20000 });
+  const res = await httpJSON('POST', API_URL, {
+    headers,
+    body,
+    timeoutMs: 20000
+  });
   if (res.statusCode !== 200) throw new Error(`triggerChat http ${res.statusCode}`);
   const j = res.data || {};
   if (j.code !== 0) throw new Error(`triggerChat failed: ${j.msg || 'unknown error'}`);
   const chat_id = j.data && j.data.id;
   const conversation_id = j.data && j.data.conversation_id;
   if (!chat_id || !conversation_id) throw new Error('missing chat_id or conversation_id');
-  return { chat_id, conversation_id };
+  return {
+    chat_id,
+    conversation_id
+  };
 }
 
-async function waitForCompleted(chat_id, conversation_id, { maxWaitMs = 45000, intervalMs = 800 } = {}) {
-  const { token } = CONFIG;
-  const headers = { Authorization: `Bearer ${token}` };
+async function waitForCompleted(chat_id, conversation_id, {
+  maxWaitMs = 45000,
+  intervalMs = 800
+} = {}) {
+  const {
+    token
+  } = CONFIG;
+  const headers = {
+    Authorization: `Bearer ${token}`
+  };
   const start = Date.now();
 
   while (true) {
     const res = await httpJSON('GET', RETRIEVE_URL, {
       headers,
-      query: { chat_id, conversation_id },
+      query: {
+        chat_id,
+        conversation_id
+      },
       timeoutMs: 15000,
     });
     if (res.statusCode !== 200) throw new Error(`retrieve http ${res.statusCode}`);
@@ -155,11 +208,19 @@ async function waitForCompleted(chat_id, conversation_id, { maxWaitMs = 45000, i
 
 // 只取“最终回答”的文本，过滤掉 knowledge_recall 等中间产物
 async function listAssistantMessagesDetailed(chat_id, conversation_id) {
-  const { token } = CONFIG;
-  const headers = { Authorization: `Bearer ${token}` };
+  const {
+    token
+  } = CONFIG;
+  const headers = {
+    Authorization: `Bearer ${token}`
+  };
   const res = await httpJSON('GET', MESSAGE_LIST_URL, {
     headers,
-    query: { chat_id, conversation_id, order: 'asc' },
+    query: {
+      chat_id,
+      conversation_id,
+      order: 'asc'
+    },
     timeoutMs: 20000,
   });
   if (res.statusCode !== 200) throw new Error(`message/list http ${res.statusCode}`);
@@ -174,15 +235,15 @@ async function listAssistantMessagesDetailed(chat_id, conversation_id) {
   const isAnswerLike = (m) => {
     const t = String(m.type || m.msg_type || m.message_type || '').toLowerCase();
     const ct = String(m.content_type || '').toLowerCase();
-    return (t === 'answer' || t === 'chat' || t === 'reply' || t === 'finish')
-           && (!ct || ct === 'text');
+    return (t === 'answer' || t === 'chat' || t === 'reply' || t === 'finish') &&
+      (!ct || ct === 'text');
   };
   let candidates = assistants.filter(isAnswerLike).map(m => String(m.content || '')).filter(Boolean);
 
   // 没有明确回答时，兜底取最后一条有内容的 assistant
-  const finalText = candidates.length
-    ? candidates[candidates.length - 1]
-    : (assistants.length ? String(assistants[assistants.length - 1].content || '') : '');
+  const finalText = candidates.length ?
+    candidates[candidates.length - 1] :
+    (assistants.length ? String(assistants[assistants.length - 1].content || '') : '');
 
   return {
     assistants,
@@ -192,13 +253,20 @@ async function listAssistantMessagesDetailed(chat_id, conversation_id) {
 }
 
 async function cozeGenerate(prompt) {
-  const { chat_id, conversation_id } = await triggerChat(prompt);
+  const {
+    chat_id,
+    conversation_id
+  } = await triggerChat(prompt);
   await waitForCompleted(chat_id, conversation_id);
-  const { assistants, finalText, rawJoined } = await listAssistantMessagesDetailed(chat_id, conversation_id);
+  const {
+    assistants,
+    finalText,
+    rawJoined
+  } = await listAssistantMessagesDetailed(chat_id, conversation_id);
   return {
-    text: finalText,            // 用于展示
-    rawJoined,                  // 调试：所有 assistant 文本拼接
-    assistants,                 // 调试：完整元信息
+    text: finalText, // 用于展示
+    rawJoined, // 调试：所有 assistant 文本拼接
+    assistants, // 调试：完整元信息
     chat_id,
     conversation_id,
   };
@@ -207,7 +275,10 @@ async function cozeGenerate(prompt) {
 // 4) IPC
 function setConfig(part) {
   if (!part || typeof part !== 'object') return;
-  CONFIG = { ...CONFIG, ...part };
+  CONFIG = {
+    ...CONFIG,
+    ...part
+  };
 }
 
 function registerAiHandlers(mainWindow) {
@@ -216,18 +287,30 @@ function registerAiHandlers(mainWindow) {
 
   ipcMain.handle('ai:setConfig', async (_e, cfg) => {
     setConfig(cfg);
-    return { ok: true };
+    return {
+      ok: true
+    };
   });
 
   // 渲染侧调用：生成建议（直接用原话）
   ipcMain.handle('ai:generate', async (_e, payload) => {
     const finalPrompt = String((payload && payload.prompt) || '');
-
+    if (payload && payload.agentConfig) {
+      setConfig(payload.agentConfig);
+    } else {
+      setConfig({
+        token: process.env.COZE_TOKEN || CONFIG.token,
+        botId: process.env.COZE_BOT_ID || CONFIG.botId,
+        userId: process.env.COZE_USER_ID || CONFIG.userId
+      });
+    }
     // 调试打印：提交给 AI 的最终 Prompt（原文）
     try {
       const preview = finalPrompt.length > 2000 ? (finalPrompt.slice(0, 2000) + ' ...[truncated]') : finalPrompt;
       console.log('[coze] final prompt ->\n', preview);
-      sendDebug('prompt', { prompt: finalPrompt });
+      sendDebug('prompt', {
+        prompt: finalPrompt
+      });
     } catch {}
 
     const res = await cozeGenerate(finalPrompt);
@@ -238,7 +321,10 @@ function registerAiHandlers(mainWindow) {
       const preview = raw.length > 2000 ? (raw.slice(0, 2000) + ' ...[truncated]') : raw;
       console.log('[coze] raw response length:', raw.length, '\n[coze] raw response preview ->\n', preview);
       console.log('[coze] final answer length:', (res.text || '').length);
-      console.log('[coze] ids:', { chat_id: res.chat_id, conversation_id: res.conversation_id });
+      console.log('[coze] ids:', {
+        chat_id: res.chat_id,
+        conversation_id: res.conversation_id
+      });
       const meta = (res.assistants || []).map(m => ({
         role: m.role,
         type: m.type || m.msg_type || m.message_type || '',
@@ -249,7 +335,10 @@ function registerAiHandlers(mainWindow) {
 
       // 发到渲染端控制台（UTF-8）
       sendDebug('response', {
-        ids: { chat_id: res.chat_id, conversation_id: res.conversation_id },
+        ids: {
+          chat_id: res.chat_id,
+          conversation_id: res.conversation_id
+        },
         meta,
         rawText: res.rawJoined,
         finalText: res.text
@@ -257,8 +346,18 @@ function registerAiHandlers(mainWindow) {
     } catch {}
 
     // 直接回传文本，由渲染端直接显示
-    return { text: res.text, debug: { prompt: finalPrompt, rawText: res.rawJoined, finalText: res.text } };
+    return {
+      text: res.text,
+      debug: {
+        prompt: finalPrompt,
+        rawText: res.rawJoined,
+        finalText: res.text
+      }
+    };
   });
 }
 
-module.exports = { registerAiHandlers, setConfig };
+module.exports = {
+  registerAiHandlers,
+  setConfig
+};
