@@ -8,52 +8,40 @@
 #include <mutex>
 #include <thread>
 #include <algorithm>
+#include <map>
 
 #pragma comment(lib, "dwmapi.lib")
 
-// Lowercased keywords from JS
 static std::vector<std::wstring> g_keywords_lower;
-static std::atomic<HWND> g_wechatHwnd(nullptr);
+static std::mutex g_enumMutex;
+static std::map<HWND, std::wstring> g_chatHwndMap;
+
 static HWINEVENTHOOK g_hookLoc = nullptr;
 static HWINEVENTHOOK g_hookFg = nullptr;
 static HWINEVENTHOOK g_hookMin = nullptr;
 static HWINEVENTHOOK g_hookDestroy = nullptr;
 
 static std::atomic<bool> g_running(false);
-static std::atomic<bool> g_found(false);
 
 static Napi::ThreadSafeFunction g_tsfn;
-static std::mutex g_enumMutex;
-
 static UINT_PTR g_retryTimer = 0;
 static HWND g_messageWindow = nullptr;
 
 // Allowed process base names (lowercase)
 static const wchar_t* kAllowedProcNames[] = {
-  L"wechat.exe",
-  L"wechatapp.exe",
-  L"wechatappex.exe",
-  L"weixin.exe",
-  L"wework.exe",           // 企业微信
-  L"企业微信.exe",         // 企业微信（中文名）
-  L"telegram.exe",         // Telegram
-  L"telegram desktop.exe",    // 新增
-  L"whatsapp.exe"          // WhatsApp
+  L"wechat.exe", L"wechatapp.exe", L"wechatappex.exe", L"weixin.exe",
+  L"wework.exe", L"企业微信.exe", L"telegram.exe", L"telegram desktop.exe", L"whatsapp.exe"
 };
 
 enum EventType {
-  EVT_FOUND,
-  EVT_POSITION,
-  EVT_FOREGROUND,
-  EVT_MINIMIZED,
-  EVT_RESTORED,
-  EVT_DESTROYED
+  EVT_FOUND, EVT_POSITION, EVT_FOREGROUND, EVT_MINIMIZED, EVT_RESTORED, EVT_DESTROYED
 };
 
 struct EventPayload {
   EventType type;
   HWND hwnd;
   RECT rect;
+  std::wstring procName;
 };
 
 static std::wstring ToLower(const std::wstring& s) {
@@ -68,34 +56,29 @@ static bool IsWindowCloaked(HWND hwnd) {
   return SUCCEEDED(hr) && cloaked;
 }
 
-// Get process base filename (lowercase). Returns true on success.
 static bool GetProcessBaseNameLower(HWND hwnd, std::wstring& outLowerBase) {
   DWORD pid = 0;
   GetWindowThreadProcessId(hwnd, &pid);
   if (!pid) return false;
-
   HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
   if (!h) return false;
-
-  std::wstring path;
-  path.resize(1024);
+  std::wstring path; path.resize(1024);
   DWORD size = static_cast<DWORD>(path.size());
   BOOL ok = QueryFullProcessImageNameW(h, 0, path.data(), &size);
   CloseHandle(h);
   if (!ok || size == 0) return false;
   path.resize(size);
-
   size_t pos = path.find_last_of(L"\\/");
   std::wstring base = (pos == std::wstring::npos) ? path : path.substr(pos + 1);
   outLowerBase = ToLower(base);
   return !outLowerBase.empty();
 }
 
-static void FireEvent(EventType t, HWND hwnd) {
+static void FireEvent(EventType t, HWND hwnd, const std::wstring& procName) {
   if (!g_tsfn) return;
   RECT r{0,0,0,0};
   if (IsWindow(hwnd)) GetWindowRect(hwnd, &r);
-  auto* payload = new EventPayload{ t, hwnd, r };
+  auto* payload = new EventPayload{ t, hwnd, r, procName };
   g_tsfn.BlockingCall(payload, [](Napi::Env env, Napi::Function cb, EventPayload* data){
     Napi::Object obj = Napi::Object::New(env);
     obj.Set("hwnd", Napi::Number::New(env, (uintptr_t)data->hwnd));
@@ -103,6 +86,7 @@ static void FireEvent(EventType t, HWND hwnd) {
     obj.Set("y", Napi::Number::New(env, data->rect.top));
     obj.Set("width", Napi::Number::New(env, data->rect.right - data->rect.left));
     obj.Set("height", Napi::Number::New(env, data->rect.bottom - data->rect.top));
+    obj.Set("procName", Napi::String::New(env, std::string(data->procName.begin(), data->procName.end())));
     const char* typeStr = "";
     switch (data->type) {
       case EVT_FOUND: typeStr = "found"; break;
@@ -118,57 +102,41 @@ static void FireEvent(EventType t, HWND hwnd) {
   });
 }
 
-// Decide if a top-level window looks like WeChat main window
 static bool IsWeChatCandidate(HWND hwnd) {
   if (!IsWindow(hwnd)) return false;
   if (!IsWindowVisible(hwnd)) return false;
   if (IsWindowCloaked(hwnd)) return false;
-
   std::wstring baseLower;
   if (GetProcessBaseNameLower(hwnd, baseLower)) {
-    // Telegram/WhatsApp 不做 owner 检查
-    if (baseLower == L"telegram desktop.exe" || baseLower == L"whatsapp.exe" || baseLower == L"telegram.exe") {
-      // 只检查是否可见即可
-      return true;
-    }
-    // 其它进程类型（微信/企业微信）做 owner 检查
+    if (baseLower == L"telegram desktop.exe" || baseLower == L"whatsapp.exe" || baseLower == L"telegram.exe") return true;
     if (GetWindow(hwnd, GW_OWNER) != NULL) return false;
     for (auto pn : kAllowedProcNames) {
       if (baseLower == pn) return true;
     }
   }
-
-  // 标题关键字兜底
   wchar_t title[512] = {0};
   GetWindowTextW(hwnd, title, 512);
   std::wstring tl = ToLower(std::wstring(title));
   for (auto &kw : g_keywords_lower) {
-    if (!kw.empty() && tl.find(kw) != std::wstring::npos) {
-      return true;
-    }
+    if (!kw.empty() && tl.find(kw) != std::wstring::npos) return true;
   }
   return false;
 }
 
-struct FindState {
-  HWND best = nullptr;
-  LONG bestArea = 0;
-};
+struct FindState { std::map<HWND, std::wstring> foundWindows; };
 
 static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
   FindState* st = reinterpret_cast<FindState*>(lParam);
   if (!st) return FALSE;
-
   if (IsWeChatCandidate(hwnd)) {
-    RECT r;
-    if (GetWindowRect(hwnd, &r)) {
-      LONG w = r.right - r.left;
-      LONG h = r.bottom - r.top;
-      if (w > 50 && h > 50) {
-        LONG area = w * h;
-        if (area > st->bestArea) {
-          st->bestArea = area;
-          st->best = hwnd;
+    std::wstring baseLower;
+    if (GetProcessBaseNameLower(hwnd, baseLower)) {
+      RECT r;
+      if (GetWindowRect(hwnd, &r)) {
+        LONG w = r.right - r.left;
+        LONG h = r.bottom - r.top;
+        if (w > 50 && h > 50) {
+          st->foundWindows[hwnd] = baseLower;
         }
       }
     }
@@ -178,44 +146,38 @@ static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
 
 static void TryFindWeChat() {
   std::lock_guard<std::mutex> lock(g_enumMutex);
-  if (g_found.load()) return;
-
   FindState st;
-  st.best = nullptr;
-  st.bestArea = 0;
   EnumWindows(EnumWindowsProc, reinterpret_cast<LPARAM>(&st));
-
-  if (st.best) {
-    g_wechatHwnd.store(st.best);
-    g_found.store(true);
-    FireEvent(EVT_FOUND, st.best);
+  for (const auto& kv : st.foundWindows) {
+    if (g_chatHwndMap.find(kv.first) == g_chatHwndMap.end()) {
+      FireEvent(EVT_FOUND, kv.first, kv.second);
+    }
   }
+  g_chatHwndMap = st.foundWindows;
 }
 
 static VOID CALLBACK RetryTimerProc(HWND, UINT, UINT_PTR, DWORD) {
   if (!g_running.load()) return;
-  if (!g_found.load()) {
-    TryFindWeChat();
-  }
+  TryFindWeChat();
 }
 
 static void CALLBACK WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd,
                                   LONG idObject, LONG /*idChild*/,
                                   DWORD, DWORD) {
-  if (!g_found.load()) return;
-  HWND target = g_wechatHwnd.load();
-  if (hwnd != target) return;
+  std::lock_guard<std::mutex> lock(g_enumMutex);
+  auto it = g_chatHwndMap.find(hwnd);
+  if (it == g_chatHwndMap.end()) return;
   if (idObject != OBJID_WINDOW) return;
-
+  const std::wstring& procName = it->second;
   switch (event) {
-    case EVENT_OBJECT_LOCATIONCHANGE: FireEvent(EVT_POSITION, hwnd); break;
-    case EVENT_SYSTEM_FOREGROUND:     FireEvent(EVT_FOREGROUND, hwnd); break;
-    case EVENT_SYSTEM_MINIMIZESTART:  FireEvent(EVT_MINIMIZED, hwnd); break;
-    case EVENT_SYSTEM_MINIMIZEEND:    FireEvent(EVT_RESTORED, hwnd); break;
+    case EVENT_OBJECT_LOCATIONCHANGE: FireEvent(EVT_POSITION, hwnd, procName); break;
+    case EVENT_SYSTEM_FOREGROUND:     FireEvent(EVT_FOREGROUND, hwnd, procName); break;
+    case EVENT_SYSTEM_MINIMIZESTART:  FireEvent(EVT_MINIMIZED, hwnd, procName); break;
+    case EVENT_SYSTEM_MINIMIZEEND:    FireEvent(EVT_RESTORED, hwnd, procName); break;
     case EVENT_OBJECT_DESTROY:
-      FireEvent(EVT_DESTROYED, hwnd);
-      g_found.store(false);
-      g_wechatHwnd.store(nullptr);
+      FireEvent(EVT_DESTROYED, hwnd, procName);
+      g_chatHwndMap.erase(hwnd);
+      TryFindWeChat();
       break;
     default: break;
   }
@@ -253,24 +215,19 @@ static void WorkerThread() {
   wc.lpszClassName = L"WeChatMonitorHiddenWindow";
   RegisterClassW(&wc);
   g_messageWindow = CreateWindowW(wc.lpszClassName, L"", 0, 0,0,0,0, HWND_MESSAGE, NULL, wc.hInstance, NULL);
-
   g_retryTimer = SetTimer(g_messageWindow, 1, 2000, RetryTimerProc);
-
   InitHooks();
   TryFindWeChat();
-
   MSG msg;
   while (g_running.load() && GetMessage(&msg, NULL, 0, 0)) {
     TranslateMessage(&msg);
     DispatchMessage(&msg);
   }
-
   if (g_retryTimer) { KillTimer(g_messageWindow, g_retryTimer); g_retryTimer = 0; }
   if (g_messageWindow) { DestroyWindow(g_messageWindow); g_messageWindow = nullptr; }
   UnhookAll();
 }
 
-// start({ keywords: string[] }, callback)
 Napi::Value Start(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   if (info.Length() < 2 || !info[0].IsObject() || !info[1].IsFunction()) {
@@ -281,7 +238,6 @@ Napi::Value Start(const Napi::CallbackInfo& info) {
     Napi::Error::New(env, "Already running").ThrowAsJavaScriptException();
     return env.Null();
   }
-
   Napi::Object opts = info[0].As<Napi::Object>();
   if (!opts.Has("keywords") || !opts.Get("keywords").IsArray()) {
     Napi::TypeError::New(env, "options.keywords must be an array of strings").ThrowAsJavaScriptException();
@@ -297,20 +253,15 @@ Napi::Value Start(const Napi::CallbackInfo& info) {
       g_keywords_lower.emplace_back(ToLower(std::wstring(p)));
     }
   }
-
   Napi::Function cb = info[1].As<Napi::Function>();
   g_tsfn = Napi::ThreadSafeFunction::New(env, cb, "wechat-monitor-callback", 0, 1);
-
   g_running.store(true);
-  g_found.store(false);
-  g_wechatHwnd.store(nullptr);
-
+  { std::lock_guard<std::mutex> lock(g_enumMutex); g_chatHwndMap.clear(); }
   std::thread th([](){
     WorkerThread();
     if (g_tsfn) g_tsfn.Release();
   });
   th.detach();
-
   return Napi::Boolean::New(env, true);
 }
 
@@ -325,7 +276,7 @@ Napi::Value IsRunning(const Napi::CallbackInfo& info) {
   return Napi::Boolean::New(info.Env(), g_running.load());
 }
 
-// setZOrder(assistantHandleBuffer: Buffer, wechatHandleNumber: number)
+// setZOrder(assistantHandleBuffer: Buffer, wechatHandleNumber: number, chatType: string)
 Napi::Value SetZOrder(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   if (info.Length() < 2 || !info[0].IsBuffer() || !info[1].IsNumber()) {
@@ -335,16 +286,20 @@ Napi::Value SetZOrder(const Napi::CallbackInfo& info) {
   Napi::Buffer<uint8_t> buf = info[0].As<Napi::Buffer<uint8_t>>();
   uintptr_t wParam = (uintptr_t) info[1].As<Napi::Number>().Int64Value();
 
-  HWND assistant = nullptr;
-  if (buf.Length() >= sizeof(HWND)) {
-    assistant = *reinterpret_cast<HWND*>(buf.Data());
-  }
-  HWND wechat = (HWND) wParam;
-  if (!assistant || !wechat) return Napi::Boolean::New(env, false);
+  std::string chatType = (info.Length() >= 3 && info[2].IsString()) ? info[2].As<Napi::String>().Utf8Value() : "";
 
+  HWND assistant = nullptr;
+  if (buf.Length() >= sizeof(HWND)) assistant = *reinterpret_cast<HWND*>(buf.Data());
+  HWND chatWindow = (HWND) wParam;
+  if (!assistant || !chatWindow) return Napi::Boolean::New(env, false);
+
+  HWND insertAfter = chatWindow;
+  if (chatType.find("wechat") != std::string::npos || chatType.find("企业微信") != std::string::npos) {
+    insertAfter = HWND_TOPMOST;
+  }
   BOOL ok = SetWindowPos(
     assistant,
-    wechat,
+    insertAfter,
     0, 0, 0, 0,
     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING
   );

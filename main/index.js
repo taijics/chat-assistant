@@ -12,6 +12,7 @@ const {
   Menu,
   nativeImage
 } = require('electron');
+
 function setBaiduOcrToken(token) {
   global.baiduOcrToken = token;
 }
@@ -428,12 +429,12 @@ function applyTargetImmediate() {
   } catch {}
 }
 
-function updateZOrder() {
+function updateZOrder(chatType) {
   if (quitting) return;
   if (!mainWindow || mainWindow.isDestroyed() || !wechatHWND) return;
   if (pinnedAlwaysOnTop) return;
   try {
-    wechatMonitor.setZOrder(mainWindow.getNativeWindowHandle(), wechatHWND);
+    wechatMonitor.setZOrder(mainWindow.getNativeWindowHandle(), wechatHWND, chatType);
   } catch {}
 }
 
@@ -452,6 +453,7 @@ function startForegroundFollow() {
     } catch {}
   }, FG_CHECK_INTERVAL);
 }
+let lastChatType = null;
 
 function handleEvent(evt) {
   if (quitting) return;
@@ -487,7 +489,7 @@ function handleEvent(evt) {
       firstDirectPosition = true;
       if (!userHidden) {
         showMain();
-        updateZOrder();
+        updateZOrder(lastChatType);
       }
       break;
     }
@@ -520,7 +522,7 @@ function handleEvent(evt) {
     case 'foreground':
       if (!userHidden) {
         showMain();
-        updateZOrder();
+        updateZOrder(lastChatType);
       }
       break;
     case 'minimized':
