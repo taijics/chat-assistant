@@ -33,7 +33,12 @@ static const wchar_t* kAllowedProcNames[] = {
   L"wechat.exe",
   L"wechatapp.exe",
   L"wechatappex.exe",
-  L"weixin.exe"
+  L"weixin.exe",
+  L"wework.exe",           // 企业微信
+  L"企业微信.exe",         // 企业微信（中文名）
+  L"telegram.exe",         // Telegram
+  L"telegram desktop.exe",    // 新增
+  L"whatsapp.exe"          // WhatsApp
 };
 
 enum EventType {
@@ -117,24 +122,29 @@ static void FireEvent(EventType t, HWND hwnd) {
 static bool IsWeChatCandidate(HWND hwnd) {
   if (!IsWindow(hwnd)) return false;
   if (!IsWindowVisible(hwnd)) return false;
-  if (GetWindow(hwnd, GW_OWNER) != NULL) return false; // exclude owned tool/dialog windows
   if (IsWindowCloaked(hwnd)) return false;
 
-  // Title match (lowercased contains)
+  std::wstring baseLower;
+  if (GetProcessBaseNameLower(hwnd, baseLower)) {
+    // Telegram/WhatsApp 不做 owner 检查
+    if (baseLower == L"telegram desktop.exe" || baseLower == L"whatsapp.exe" || baseLower == L"telegram.exe") {
+      // 只检查是否可见即可
+      return true;
+    }
+    // 其它进程类型（微信/企业微信）做 owner 检查
+    if (GetWindow(hwnd, GW_OWNER) != NULL) return false;
+    for (auto pn : kAllowedProcNames) {
+      if (baseLower == pn) return true;
+    }
+  }
+
+  // 标题关键字兜底
   wchar_t title[512] = {0};
   GetWindowTextW(hwnd, title, 512);
   std::wstring tl = ToLower(std::wstring(title));
   for (auto &kw : g_keywords_lower) {
     if (!kw.empty() && tl.find(kw) != std::wstring::npos) {
       return true;
-    }
-  }
-
-  // Process name match
-  std::wstring baseLower;
-  if (GetProcessBaseNameLower(hwnd, baseLower)) {
-    for (auto pn : kAllowedProcNames) {
-      if (baseLower == pn) return true;
     }
   }
   return false;

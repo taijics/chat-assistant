@@ -571,7 +571,9 @@ app.whenReady().then(() => {
 
   try {
     wechatMonitor.start({
-      keywords: []
+      keywords: [
+        "微信", "企业微信", "Telegram", "WhatsApp"
+      ]
     }, handleEvent);
   } catch (e) {
     console.warn('[wechatMonitor] start failed:', e.message);
