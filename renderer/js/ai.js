@@ -28,6 +28,40 @@
     return String(s || '').replace(/\r\n/g, '\n').trim();
   }
 
+  const http = require('http');
+
+  function getWeChatOCRText(callback) {
+    const url = "http://127.0.0.1:5678/screenshot_ocr?title=微信&img=wechat.png";
+    http.get(url, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const obj = JSON.parse(data);
+          if (obj.status === "ok") {
+            callback(obj.text); // 返回识别到的文本
+          } else {
+            callback("截图或OCR失败");
+          }
+        } catch (e) {
+          callback("解析失败:" + e.message);
+        }
+      });
+    }).on('error', err => callback('请求错误:' + err.message));
+  }
+
+  // 按钮事件里用
+  getWeChatOCRText(function(text) {
+    // 这里 text 就是OCR识别的聊天内容
+    // 你可以用js代码插入到AI选项卡的文本框
+    document.querySelector("#ai-context").value = text;
+  });
+  document.getElementById('btn-wechat-ocr').onclick = function() {
+    getWeChatOCRText(function(text) {
+      document.getElementById('ai-context').value = text;
+    });
+  };
+
   function stripMarkdown(s) {
     return String(s || '')
       .replace(/```[\s\S]*?```/g, '')
