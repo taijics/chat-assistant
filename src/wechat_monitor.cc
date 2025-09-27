@@ -24,6 +24,7 @@ static HWINEVENTHOOK g_hookDestroy = nullptr;
 static std::atomic<bool> g_running(false);
 
 static Napi::ThreadSafeFunction g_tsfn;
+static bool g_tsfn_inited = false;
 static UINT_PTR g_retryTimer = 0;
 static HWND g_messageWindow = nullptr;
 
@@ -75,7 +76,7 @@ static bool GetProcessBaseNameLower(HWND hwnd, std::wstring& outLowerBase) {
 }
 
 static void FireEvent(EventType t, HWND hwnd, const std::wstring& procName) {
-  if (!g_tsfn) return;
+  if (!g_tsfn_inited) return;
   RECT r{0,0,0,0};
   if (IsWindow(hwnd)) GetWindowRect(hwnd, &r);
   auto* payload = new EventPayload{ t, hwnd, r, procName };
@@ -255,11 +256,15 @@ Napi::Value Start(const Napi::CallbackInfo& info) {
   }
   Napi::Function cb = info[1].As<Napi::Function>();
   g_tsfn = Napi::ThreadSafeFunction::New(env, cb, "wechat-monitor-callback", 0, 1);
+  g_tsfn_inited = true;
   g_running.store(true);
   { std::lock_guard<std::mutex> lock(g_enumMutex); g_chatHwndMap.clear(); }
   std::thread th([](){
     WorkerThread();
-    if (g_tsfn) g_tsfn.Release();
+    if (g_tsfn_inited) {
+      g_tsfn.Release();
+      g_tsfn_inited = false;
+    }
   });
   th.detach();
   return Napi::Boolean::New(env, true);
