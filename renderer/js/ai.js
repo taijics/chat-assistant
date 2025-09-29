@@ -62,6 +62,46 @@
     });
   };
 
+  function resetScreenshotArea() {
+    fetch('http://127.0.0.1:5678/reset_area')
+      .then(res => res.json())
+      .then(data => {
+        showHintBox('截图区域已重选！');
+      })
+      .catch(err => {
+        showHintBox('截图区域重选失败');
+      });
+  }
+
+  // 简单的1秒自动消失提示框
+  function showHintBox(message) {
+    // 检查是否已有提示框
+    let hintBox = document.getElementById('hintBox');
+    if (!hintBox) {
+      hintBox = document.createElement('div');
+      hintBox.id = 'hintBox';
+      hintBox.style.position = 'fixed';
+      hintBox.style.top = '20px';
+      hintBox.style.left = '50%';
+      hintBox.style.transform = 'translateX(-50%)';
+      hintBox.style.background = 'rgba(0,0,0,0.7)';
+      hintBox.style.color = '#fff';
+      hintBox.style.padding = '10px 30px';
+      hintBox.style.borderRadius = '5px';
+      hintBox.style.zIndex = '9999';
+      hintBox.style.fontSize = '16px';
+      document.body.appendChild(hintBox);
+    }
+    hintBox.textContent = message;
+    hintBox.style.display = 'block';
+
+    setTimeout(() => {
+      hintBox.style.display = 'none';
+    }, 1000);
+  }
+  // 绑定按钮
+  document.getElementById('resetAreaBtn').onclick = resetScreenshotArea;
+
   function stripMarkdown(s) {
     return String(s || '')
       .replace(/```[\s\S]*?```/g, '')
