@@ -1,6 +1,8 @@
 (() => {
   // 顶栏交互：DOMContentLoaded 后绑定；支持 Alt+D 切换 DevTools
-  const { ipcRenderer } = require('electron');
+  const {
+    ipcRenderer
+  } = require('electron');
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -61,7 +63,9 @@
       }
     });
   }
-
+  ipcRenderer.on('menu:switch-tab', (_e, tabName) => {
+    if (window.activateTab) window.activateTab(tabName);
+  });
   // 同步“置顶”勾选状态
   ipcRenderer.on('toolbar:pin-state', (_e, pinned) => {
     const pinItem = document.getElementById('menu-pin');

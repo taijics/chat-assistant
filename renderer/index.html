@@ -40,7 +40,7 @@
 
 
     <!-- Tabs bar -->
-    <div class="tabbar" id="tabbar" role="tablist" aria-label="主功能选项卡">
+    <!-- <div class="tabbar" id="tabbar" role="tablist" aria-label="主功能选项卡">
       <button class="tab-btn active" role="tab" id="tabbtn-phrases" aria-controls="tab-phrases" aria-selected="true"
         tabindex="0" data-tab="phrases">本地短语</button>
       <button class="tab-btn" role="tab" id="tabbtn-ai" aria-controls="tab-ai" aria-selected="false" tabindex="-1"
@@ -49,16 +49,33 @@
         tabindex="-1" data-tab="models">AI模型</button>
       <button class="tab-btn" role="tab" id="tabbtn-emojis" aria-controls="tab-emojis" aria-selected="false"
         tabindex="-1" data-tab="emojis">本地表情</button>
+    </div> -->
+    
+    <div class="tabbar" id="tabbar" role="tablist" aria-label="话术类别">
+      <button class="tab-btn active" role="tab" id="tabbtn-corp" aria-controls="tab-corp" aria-selected="true"
+        tabindex="0" data-tab="corp">公司话术</button>
+      <button class="tab-btn" role="tab" id="tabbtn-group" aria-controls="tab-group" aria-selected="false"
+        tabindex="-1" data-tab="group">小组话术</button>
+      <button class="tab-btn" role="tab" id="tabbtn-private" aria-controls="tab-private" aria-selected="false"
+        tabindex="-1" data-tab="private">私人话术</button>
     </div>
+
 
     <!-- Tabs content -->
     <div class="tabpanes">
-      <!-- 本地短语 -->
-      <section class="tabpane active" role="tabpanel" id="tab-phrases" aria-labelledby="tabbtn-phrases"
-        aria-hidden="false">
+      <section class="tabpane active" role="tabpanel" id="tab-corp" aria-labelledby="tabbtn-corp" aria-hidden="false">
+        <!-- 公司话术内容 -->
         <div class="phrase-cats" id="phrase-cats"></div>
         <div class="phrase-list" id="phrase-list"></div>
       </section>
+      <section class="tabpane" role="tabpanel" id="tab-group" aria-labelledby="tabbtn-group" aria-hidden="true">
+        <!-- 小组话术内容 -->
+      </section>
+      <section class="tabpane" role="tabpanel" id="tab-private" aria-labelledby="tabbtn-private" aria-hidden="true">
+        <!-- 私人话术内容 -->
+      </section>
+      <!-- 本地短语 -->
+    
 
       <!-- AI -->
       <section class="tabpane" role="tabpanel" id="tab-ai" aria-labelledby="tabbtn-ai" aria-hidden="true">
@@ -183,28 +200,8 @@
       </section>
     </div>
 
-    <div class="app-menu" id="app-menu">
-      <ul>
-        <li data-action="new">新建聊天</li>
-        <li data-action="history">历史</li>
-        <li id="menu-pin" data-action="pin">置顶</li>
-        <li class="divider"></li>
-        <li data-action="screenshot">截图</li>
-        <li data-action="search">搜索</li>
-        <li data-action="clear">清空</li>
-        <li data-action="export">导出</li>
-        <li class="divider"></li>
-        <li data-action="settings">设置</li>
-        <li data-action="about">关于</li>
-        <li class="divider"></li>
-        <li data-action="minimize">最小化</li>
-        <li data-action="exit">退出</li>
-      </ul>
-    </div>
+   
 
-    <div class="app-content">
-      <!-- 你的内容区域 -->
-    </div>
 
     <!-- 右侧缩放条（不可见，仅用于命中拖动） -->
     <div id="edge-resizer-right" aria-hidden="true"></div>

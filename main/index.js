@@ -272,64 +272,22 @@ function createMainWindow() {
         }
       ]
     },
-    {
-      label: 'Edit',
-      submenu: [{
-          role: 'undo'
-        }, {
-          role: 'redo'
-        }, {
-          type: 'separator'
-        },
-        {
-          role: 'cut'
-        }, {
-          role: 'copy'
-        }, {
-          role: 'paste'
-        }, {
-          role: 'selectAll'
-        }
-      ]
-    },
-    {
-      label: 'View',
-      submenu: [{
-          role: 'reload'
-        }, {
-          role: 'forceReload'
-        }, {
-          type: 'separator'
-        },
-        {
-          role: 'resetZoom'
-        }, {
-          role: 'zoomIn'
-        }, {
-          role: 'zoomOut'
-        }, {
-          type: 'separator'
-        },
-        {
-          role: 'togglefullscreen'
-        }, {
-          type: 'separator'
-        },
-        {
-          label: 'Toggle DevTools',
-          accelerator: 'Alt+D',
-          click: toggleDevTools
-        }
-      ]
-    },
-    {
-      label: 'Window',
-      submenu: [{
-        role: 'minimize'
-      }, {
-        role: 'close'
-      }]
-    },
+      {
+        label: '话术',
+        click: () => { mainWindow.webContents.send('menu:switch-tab', 'phrases'); }
+      },
+      {
+        label: '浏览器',
+        click: () => { mainWindow.webContents.send('menu:switch-tab', 'models'); }
+      },
+      {
+        label: '智能体',
+        click: () => { mainWindow.webContents.send('menu:switch-tab', 'ai'); }
+      },
+      {
+        label: '表情',
+        click: () => { mainWindow.webContents.send('menu:switch-tab', 'emojis'); }
+      },
     {
       label: 'Help',
       submenu: [{

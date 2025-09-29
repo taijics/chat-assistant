@@ -1,6 +1,7 @@
-(function () {
+(function() {
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  window.activateTab = activate;
 
   function activate(tabName) {
     const bar = $('#tabbar');
@@ -23,7 +24,9 @@
       }
     });
 
-    try { localStorage.setItem('ui.activeTab', tabName); } catch {}
+    try {
+      localStorage.setItem('ui.activeTab', tabName);
+    } catch {}
   }
 
   function moveFocus(direction) {
@@ -100,12 +103,18 @@
       } else if (key === 'Home') {
         e.preventDefault();
         const first = $$('.tab-btn[role="tab"]', bar)[0];
-        if (first) { activate(first.dataset.tab); first.focus(); }
+        if (first) {
+          activate(first.dataset.tab);
+          first.focus();
+        }
       } else if (key === 'End') {
         e.preventDefault();
         const all = $$('.tab-btn[role="tab"]', bar);
         const last = all[all.length - 1];
-        if (last) { activate(last.dataset.tab); last.focus(); }
+        if (last) {
+          activate(last.dataset.tab);
+          last.focus();
+        }
       } else if (key === 'Enter' || key === ' ') {
         // 已在 roving tabindex 上，Enter/Space 可保持一致行为
         const focused = document.activeElement;
