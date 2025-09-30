@@ -54,13 +54,8 @@
   border-radius: 0 8px 8px 8px;
 }
 
-/* 面板显隐 */
-.tabpane {
-  display: none;
-}
-
-.tabpane.active {
-  display: block;
+.padding10{
+  padding: 0 5px;
 }
 
 /* 本地短语：顶部类别栏与添加按钮 */

@@ -39,53 +39,49 @@
   <body>
 
 
-    <!-- Tabs bar -->
-    <!-- <div class="tabbar" id="tabbar" role="tablist" aria-label="主功能选项卡">
-      <button class="tab-btn active" role="tab" id="tabbtn-phrases" aria-controls="tab-phrases" aria-selected="true"
-        tabindex="0" data-tab="phrases">本地短语</button>
-      <button class="tab-btn" role="tab" id="tabbtn-ai" aria-controls="tab-ai" aria-selected="false" tabindex="-1"
-        data-tab="ai">AI</button>
-      <button class="tab-btn" role="tab" id="tabbtn-models" aria-controls="tab-models" aria-selected="false"
-        tabindex="-1" data-tab="models">AI模型</button>
-      <button class="tab-btn" role="tab" id="tabbtn-emojis" aria-controls="tab-emojis" aria-selected="false"
-        tabindex="-1" data-tab="emojis">本地表情</button>
-    </div> -->
-    
-    <div class="tabbar" id="tabbar" role="tablist" aria-label="话术类别">
-      <button class="tab-btn active" role="tab" id="tabbtn-corp" aria-controls="tab-corp" aria-selected="true"
-        tabindex="0" data-tab="corp">公司话术</button>
-      <button class="tab-btn" role="tab" id="tabbtn-group" aria-controls="tab-group" aria-selected="false"
-        tabindex="-1" data-tab="group">小组话术</button>
-      <button class="tab-btn" role="tab" id="tabbtn-private" aria-controls="tab-private" aria-selected="false"
-        tabindex="-1" data-tab="private">私人话术</button>
-    </div>
+
+
 
 
     <!-- Tabs content -->
-    <div class="tabpanes">
-      <section class="tabpane active" role="tabpanel" id="tab-corp" aria-labelledby="tabbtn-corp" aria-hidden="false">
-        <!-- 公司话术内容 -->
-        <div class="phrase-cats" id="phrase-cats"></div>
-        <div class="phrase-list" id="phrase-list"></div>
-      </section>
-      <section class="tabpane" role="tabpanel" id="tab-group" aria-labelledby="tabbtn-group" aria-hidden="true">
-        <!-- 小组话术内容 -->
-      </section>
-      <section class="tabpane" role="tabpanel" id="tab-private" aria-labelledby="tabbtn-private" aria-hidden="true">
-        <!-- 私人话术内容 -->
-      </section>
-      <!-- 本地短语 -->
-    
+    <div id="phrases-area" class="padding10">
+      <div class="tabbar" id="tabbar" role="tablist" aria-label="话术类别">
+        <button class="tab-btn active" role="tab" id="tabbtn-corp" aria-controls="tab-corp" aria-selected="true"
+          tabindex="0" data-tab="corp">公司话术</button>
+        <button class="tab-btn" role="tab" id="tabbtn-group" aria-controls="tab-group" aria-selected="false"
+          tabindex="-1" data-tab="group">小组话术</button>
+        <button class="tab-btn" role="tab" id="tabbtn-private" aria-controls="tab-private" aria-selected="false"
+          tabindex="-1" data-tab="private">私人话术</button>
+      </div>
 
-      <!-- AI -->
+      <div class="tabpanes">
+        <section class="tabpane active" role="tabpanel" id="tab-corp" aria-labelledby="tabbtn-corp" aria-hidden="false">
+          <div class="phrase-cats" id="phrase-cats"></div>
+          <div class="phrase-list" id="phrase-list"></div>
+        </section>
+        <section class="tabpane" role="tabpanel" id="tab-group" aria-labelledby="tabbtn-group" aria-hidden="true">
+          <div class="phrase-cats" id="phrase-cats-group"></div>
+          <div class="phrase-list" id="phrase-list-group"></div>
+        </section>
+        <section class="tabpane" role="tabpanel" id="tab-private" aria-labelledby="tabbtn-private" aria-hidden="true">
+          <div class="phrase-cats" id="phrase-cats-private"></div>
+          <div class="phrase-list" id="phrase-list-private"></div>
+        </section>
+      </div>
+    </div>
+    <!-- 本地短语 -->
+
+
+    <!-- AI -->
+    <div id="ai-area" style="display:none;" class="padding10">
       <section class="tabpane" role="tabpanel" id="tab-ai" aria-labelledby="tabbtn-ai" aria-hidden="true">
         <!-- 类别栏 -->
-        <div class="ai-category-bar" id="ai-category-bar">
+       <!-- <div class="ai-category-bar" id="ai-category-bar">
           <button class="ai-cat-btn" data-cat="咨询中">咨询中</button>
           <button class="ai-cat-btn" data-cat="已成交">已成交</button>
           <button class="ai-cat-btn" data-cat="已结束">已结束</button>
           <button class="ai-cat-btn" data-cat="退款中">退款中</button>
-        </div>
+        </div> -->
 
         <!-- 客户昵称列表弹窗（默认隐藏，点击类别后出现） -->
         <div class="ai-customer-list-popup" id="ai-customer-list-popup" style="display:none;">
@@ -146,19 +142,14 @@
           </div>
         </div>
       </section>
-
-      <!-- AI模型（BrowserView 承载） -->
+    </div>
+    <!-- AI模型（BrowserView 承载） -->
+    <div id="models-area" style="display:none;" class="padding10">
       <section class="tabpane" role="tabpanel" id="tab-models" aria-labelledby="tabbtn-models" aria-hidden="true">
         <div class="aimodels">
           <div class="aimodels-tabs" id="aimodels-tabs" role="tablist" aria-label="AI模型站点">
             <button class="aim-tab active" role="tab" aria-selected="true" tabindex="0"
               data-url="https://www.doubao.com/chat/">豆包</button>
-            <button class="aim-tab" role="tab" aria-selected="false" tabindex="-1"
-              data-url="https://chatgpt.com/?hints=moonshine">ChatGPT</button>
-            <button class="aim-tab" role="tab" aria-selected="false" tabindex="-1"
-              data-url="https://chat.deepseek.com/">DeepSeek</button>
-            <button class="aim-tab" role="tab" aria-selected="false" tabindex="-1"
-              data-url="https://www.tongyi.com/qianwen">通义千问</button>
           </div>
 
           <div class="aimodels-actions">
@@ -166,31 +157,18 @@
           </div>
 
           <div class="aimodels-view">
-            <div id="aimodels-host" class="aimodels-host"></div>
+           <!-- <div id="aimodels-host" class="aimodels-host"></div> -->
             <iframe id="aimodels-fallback" hidden sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
               referrerpolicy="no-referrer"></iframe>
           </div>
           <div class="aimodels-tip" id="aimodels-tip">若网页在本窗口加载异常，可点击“在浏览器打开”。</div>
         </div>
       </section>
-      <!-- 智能体弹窗（添加/编辑） -->
-      <div class="ai-agent-modal" id="ai-agent-modal" style="display:none;">
-        <div class="ai-agent-modal-content">
-          <h3 id="ai-agent-modal-title">添加智能体</h3>
-          <label>名称：<input type="text" id="ai-agent-input-name"></label>
-          <label>Token：<input type="text" id="ai-agent-input-token"></label>
-          <label>Bot ID：<input type="text" id="ai-agent-input-botid"></label>
-          <label>过期时间：
-            <input type="date" id="ai-agent-input-expire">
-          </label>
-          <div class="ai-agent-modal-actions">
-            <button id="ai-agent-modal-ok">确定</button>
-            <button id="ai-agent-modal-cancel">取消</button>
-          </div>
-        </div>
-      </div>
+    </div>
 
-      <!-- 本地表情 -->
+
+    <!-- 本地表情 -->
+    <div id="emojis-area" style="display:none;" class="padding10">
       <section class="tabpane" role="tabpanel" id="tab-emojis" aria-labelledby="tabbtn-emojis" aria-hidden="true">
         <div class="media-toolbar">
           <button id="emo-pick">选择表情文件夹</button>
@@ -200,7 +178,6 @@
       </section>
     </div>
 
-   
 
 
     <!-- 右侧缩放条（不可见，仅用于命中拖动） -->
@@ -214,7 +191,7 @@
     <script src="./js/menu.js"></script>
     <script src="./js/resize.js"></script>
     <script src="./js/ai-dragdrop.js"></script>
-    
-   
+
+
   </body>
 </html>

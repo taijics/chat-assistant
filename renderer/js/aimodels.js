@@ -9,7 +9,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
 
     let useFallbackIframe = false;
     let lastUrl = 'https://www.doubao.com/chat/';
-
+    window.currentModelTabIdx = -1;
     // 懒加载与激活状态
     let modelsInitialized = false; // 是否已创建/切换过一次模型视图
     let modelsActive = false; // 当前是否在“AI模型”选项卡
@@ -352,17 +352,41 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
      * 外部可调用：激活指定 tab（btn），默认激活第一个 tab
      * @param {HTMLElement|null} btn - 可传入某个 .aim-tab，不传则默认第一个
      */
-    window.activateModelTab = function(btn) {
-      const bar = document.getElementById('aimodels-tabs') || document.querySelector('#aimodels-tabs');
-      if (!bar) return;
-      if (!btn) {
-        btn = bar.querySelector('.aim-tab') || (bar.querySelectorAll('.aim-tab')[0]);
-      }
-      if (btn) {
-        activateModel(btn);
-        btn.focus();
-      }
+    window.activateModelTab = function(idx = 0) {
+      // 如果已经是当前tab，不重复加载
+      if (window.currentModelTabIdx === idx) return;
+
+      const tabs = document.querySelectorAll('.aimodels-tabs .aim-tab');
+      if (tabs.length === 0) return;
+      tabs.forEach(tab => tab.classList.remove('active'));
+      const tab = tabs[idx];
+      if (!tab) return;
+      tab.classList.add('active');
+      window.currentModelTabIdx = idx;
+
+      // 打开网址
+      openModelUrl(tab.dataset.url);
     };
+    // 打开指定URL到iframe或BrowserView
+    function openModelUrl(url) {
+      // 如果用BrowserView，需主进程通信
+      // 这里只做iframe兜底处理
+      const iframe = document.getElementById('aimodels-fallback');
+      if (iframe) {
+        iframe.hidden = false;
+        iframe.src = url;
+      }
+      // 其它BrowserView控制略
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      const tabs = document.querySelectorAll('.aimodels-tabs .aim-tab');
+      tabs.forEach((tab, idx) => {
+        tab.addEventListener('click', () => {
+          window.activateModelTab(idx);
+        });
+      });
+    });
 
     window.addEventListener('DOMContentLoaded', setupEvents);
   })();

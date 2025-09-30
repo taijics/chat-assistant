@@ -249,8 +249,35 @@ function createMainWindow() {
 
   // 标准菜单栏（File/Edit/View/Window/Help）
   const template = [{
-      label: '文件',
+      label: '话术',
+      click: () => {
+        mainWindow.webContents.send('menu:switch-tab', 'phrases');
+      }
+    },
+    {
+      label: '浏览器',
+      click: () => {
+        mainWindow.webContents.send('menu:switch-tab', 'models');
+      }
+    },
+    {
+      label: '智能体',
+      click: () => {
+        mainWindow.webContents.send('menu:switch-tab', 'ai');
+      }
+    },
+    {
+      label: '表情',
+      click: () => {
+        mainWindow.webContents.send('menu:switch-tab', 'emojis');
+      }
+    },
+    {
+      label: 'Help',
       submenu: [{
+          label: 'Homepage',
+          click: () => shell.openExternal('https://github.com/')
+        }, {
           label: '识别聊天用户列表',
           click: async () => {
             const win = require('electron').BrowserWindow.getFocusedWindow();
@@ -263,37 +290,8 @@ function createMainWindow() {
             const win = require('electron').BrowserWindow.getFocusedWindow();
             win.webContents.send('menu:baidu-token');
           }
-        },
-        {
-          type: 'separator'
-        },
-        {
-          role: 'quit'
         }
       ]
-    },
-      {
-        label: '话术',
-        click: () => { mainWindow.webContents.send('menu:switch-tab', 'phrases'); }
-      },
-      {
-        label: '浏览器',
-        click: () => { mainWindow.webContents.send('menu:switch-tab', 'models'); }
-      },
-      {
-        label: '智能体',
-        click: () => { mainWindow.webContents.send('menu:switch-tab', 'ai'); }
-      },
-      {
-        label: '表情',
-        click: () => { mainWindow.webContents.send('menu:switch-tab', 'emojis'); }
-      },
-    {
-      label: 'Help',
-      submenu: [{
-        label: 'Homepage',
-        click: () => shell.openExternal('https://github.com/')
-      }]
     }
   ];
   try {
