@@ -378,7 +378,7 @@
   }
 
   // AI分类客户
-  const categoryBar = document.getElementById('ai-category-bar');
+//  const categoryBar = document.getElementById('ai-category-bar');
   const customerPopup = document.getElementById('ai-customer-list-popup');
   const customerList = document.getElementById('ai-customer-list');
   const customerSearch = document.getElementById('ai-customer-search');
@@ -441,7 +441,7 @@
   let filteredCustomerList = [];
   let selectedCustomerId = '';
 
-  categoryBar.addEventListener('click', (e) => {
+/*  categoryBar.addEventListener('click', (e) => {
     const btn = e.target.closest('.ai-cat-btn');
     if (!btn) return;
     [...categoryBar.querySelectorAll('.ai-cat-btn')].forEach(b => b.classList.remove('active'));
@@ -452,7 +452,7 @@
     customerPopup.style.display = 'block';
     selectedCustomerId = '';
     chatHistory.innerHTML = '';
-  });
+  }); */
 
   customerSearch.addEventListener('input', () => {
     const kw = customerSearch.value.trim();

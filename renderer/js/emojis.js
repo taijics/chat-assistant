@@ -1,5 +1,7 @@
 (function() {
-  const { ipcRenderer } = require('electron');
+  const {
+    ipcRenderer
+  } = require('electron');
   const path = require('path');
   const fs = require('fs');
 
@@ -21,6 +23,7 @@
   function storageKey(tab) {
     return `emojis.cats.${tab}.v1`;
   }
+
   function loadCustomCats(tab) {
     try {
       let raw = localStorage.getItem(storageKey(tab));
@@ -30,6 +33,7 @@
     } catch {}
     return [];
   }
+
   function saveCustomCats(tab) {
     try {
       localStorage.setItem(storageKey(tab), JSON.stringify(customCats[tab]));
@@ -50,7 +54,7 @@
 
   // --- 渲染所有类别栏，只刷新当前tab，其它tab类别栏清空 ---
   function renderAllEmojiCatsBar() {
-    ['net','corp','group','private'].forEach(tab => {
+    ['net', 'corp', 'group', 'private'].forEach(tab => {
       const catsBar = document.getElementById(`emoji-cats-${tab}`);
       if (tab !== currentTab) {
         catsBar.innerHTML = ""; // 其它tab类别栏清空
@@ -74,7 +78,7 @@
 
   // --- 渲染所有emoji图片区，只刷新当前tab，其它tab图片区清空 ---
   function renderAllEmojiLists() {
-    ['net','corp','group','private'].forEach(tab => {
+    ['net', 'corp', 'group', 'private'].forEach(tab => {
       const grid = document.getElementById(`emoji-list-${tab}`);
       if (tab !== currentTab) {
         grid.innerHTML = ""; // 其它tab图片区清空
@@ -156,7 +160,45 @@
 
   window.addEventListener('DOMContentLoaded', function() {
     init();
-
+    // 绑定拖拽导入事件
+    ['net', 'corp', 'group', 'private'].forEach(tab => {
+      const grid = document.getElementById(`emoji-list-${tab}`);
+      if (!grid) return;
+      // 允许拖拽
+      grid.ondragover = function(e) {
+        e.preventDefault();
+        grid.classList.add('dragover');
+      };
+      grid.ondragleave = function(e) {
+        grid.classList.remove('dragover');
+      };
+      grid.ondrop = function(e) {
+        e.preventDefault();
+        grid.classList.remove('dragover');
+        const files = Array.from(e.dataTransfer.files);
+        if (!files.length) return;
+        // 只处理图片类型
+        files.forEach(file => {
+          if (!/^image\//.test(file.type)) return;
+          const reader = new FileReader();
+          reader.onload = function(evt) {
+            const buffer = Buffer.from(evt.target.result);
+            const ext = file.name.split('.').pop().toLowerCase();
+            // 目标目录
+            const dir = path.join("D:/emojis", tab, currentCat || "默认");
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, {
+              recursive: true
+            });
+            // 文件名：时间戳+原名
+            const filename = `${Date.now()}_${file.name}`;
+            fs.writeFileSync(path.join(dir, filename), buffer);
+            // 刷新表情区
+            renderEmojiList(tab, currentCat);
+          };
+          reader.readAsArrayBuffer(file);
+        });
+      };
+    });
     // tab切换
     document.getElementById('emo-tabbar').onclick = function(e) {
       const btn = e.target.closest('.emo-tab-btn');
@@ -184,7 +226,9 @@
             renderAllEmojiLists();
             // 自动创建目录
             const dir = path.join(EMOJIS_BASE, tab, name);
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, {
+              recursive: true
+            });
           }
         }
       };
@@ -248,41 +292,54 @@
       const btnOk = mask.querySelector('.btn-ok');
       const btnCancel = mask.querySelector('.btn-cancel');
       input.value = '';
-      setTimeout(() => { input.focus(); }, 0);
+      setTimeout(() => {
+        input.focus();
+      }, 0);
       const close = (val) => {
         if (mask && mask.parentNode) mask.parentNode.removeChild(mask);
         resolve(val);
       };
       btnOk.addEventListener('click', () => close(input.value.trim()));
       btnCancel.addEventListener('click', () => close(null));
-      mask.addEventListener('click', (e) => { if (e.target === mask) close(null); });
+      mask.addEventListener('click', (e) => {
+        if (e.target === mask) close(null);
+      });
       dialog.addEventListener('click', (e) => e.stopPropagation());
       mask.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); btnOk.click(); }
-        if (e.key === 'Escape') { e.preventDefault(); btnCancel.click(); }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          btnOk.click();
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          btnCancel.click();
+        }
       });
-      input.addEventListener('keydown', (e) => { e.stopPropagation(); });
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+      });
     });
   }
-function renderEmojiCatsBar(tab) {
-  const catsList = document.getElementById(`emoji-cats-list-${tab}`);
-  const catsOps = document.getElementById(`emoji-cats-ops-${tab}`);
-  let html = '';
-  if (tab === 'net') {
-    html = NET_CATEGORIES.map(cat =>
-      `<button class="emo-cat-btn${cat === currentCat ? ' active' : ''}" data-cat="${cat}">${cat}</button>`
-    ).join('');
-    catsList.innerHTML = html;
-    catsOps.style.display = 'none';
-  } else {
-    const cats = customCats[tab] || [];
-    html = cats.map(cat =>
-      `<button class="emo-cat-btn${cat === currentCat ? ' active' : ''}" data-cat="${cat}">${cat}</button>`
-    ).join('');
-    catsList.innerHTML = html;
-    catsOps.style.display = '';
+
+  function renderEmojiCatsBar(tab) {
+    const catsList = document.getElementById(`emoji-cats-list-${tab}`);
+    const catsOps = document.getElementById(`emoji-cats-ops-${tab}`);
+    let html = '';
+    if (tab === 'net') {
+      html = NET_CATEGORIES.map(cat =>
+        `<button class="emo-cat-btn${cat === currentCat ? ' active' : ''}" data-cat="${cat}">${cat}</button>`
+      ).join('');
+      catsList.innerHTML = html;
+      catsOps.style.display = 'none';
+    } else {
+      const cats = customCats[tab] || [];
+      html = cats.map(cat =>
+        `<button class="emo-cat-btn${cat === currentCat ? ' active' : ''}" data-cat="${cat}">${cat}</button>`
+      ).join('');
+      catsList.innerHTML = html;
+      catsOps.style.display = '';
+    }
   }
-}
   // --- 右键菜单 ---
   function showContextMenu(x, y, items) {
     let m = document.getElementById('emo-context-menu');
@@ -305,6 +362,8 @@ function renderEmojiCatsBar(tab) {
       if (items[idx] && typeof items[idx].click === 'function') items[idx].click();
       m.remove();
     };
-    document.addEventListener('click', () => m.remove(), { once: true });
+    document.addEventListener('click', () => m.remove(), {
+      once: true
+    });
   }
 })();
