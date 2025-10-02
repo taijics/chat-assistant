@@ -54,7 +54,7 @@
   border-radius: 0 8px 8px 8px;
 }
 
-.padding10{
+.padding10 {
   padding: 0 5px;
 }
 
@@ -261,9 +261,6 @@
   overflow: auto;
 }
 
-.media-grid.small {
-  grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
-}
 
 .media-thumb {
   border: 1px solid #eee;
@@ -419,74 +416,64 @@
   border-bottom-color: #fff;
 }
 
-
-/* 表情Tab栏按钮样式（仿话术tab） */
-#emo-tabbar .emo-tab-btn {
-  appearance: none;
-  border: 1px solid transparent;
-  border-bottom: none;
-  background: transparent;
-  color: #333;
-  padding: 8px 14px;
-  margin: 0;
-  margin-bottom: -1px;
-  border-top-left-radius: 8px;
-  border-top-right-radius: 8px;
-  font-size: 13px;
-  cursor: pointer;
-  line-height: 1;
-  outline: none;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-#emo-tabbar .emo-tab-btn.active {
-  background: #fff;
-  color: #1677ff;
-  border-color: #ddd;
-  border-bottom-color: #fff;
-}
-#emo-tabbar .emo-tab-btn:hover {
-  background: #eef5ff;
-}
-#emo-tabbar .emo-tab-btn:focus-visible {
-  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.35);
-  border-radius: 8px 8px 0 0;
+/* 仿话术区类别栏样式 */
+.emoji-cats-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
-/* 表情类别栏按钮样式（仿话术类别） */
-#emo-cats-bar .emo-cat-btn {
+.emoji-cats-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.emo-cat-btn {
   padding: 4px 10px;
   border: 1px solid #ddd;
   background: #fff;
   border-radius: 999px;
+  margin: 0 4px 4px 0;
   font-size: 12px;
   cursor: pointer;
   color: #333;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
-#emo-cats-bar .emo-cat-btn.active {
+
+.emo-cat-btn.active {
   background: #e6f4ff;
   border-color: #91caff;
   color: #1677ff;
 }
-#emo-cats-bar .emo-cat-btn:hover {
+
+.emo-cat-btn:hover {
   background: #f6faff;
   border-color: #91caff;
   color: #1677ff;
 }
 
-#emo-cats-bar .emo-cat-add-btn {
+.emoji-cats-ops {
+  flex: 0 0 auto;
+}
+
+.emo-cat-add-btn {
   padding: 4px 10px;
   border: 1px solid #ddd;
   background: #fff;
   color: #333;
   border-radius: 999px;
   cursor: pointer;
+  position: fixed;
+  right: 10px;
   font-size: 13px;
   line-height: 1;
-  margin-left: 8px;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
-#emo-cats-bar .emo-cat-add-btn:hover {
+
+.emo-cat-add-btn:hover {
   background: #f6faff;
   border-color: #91caff;
   color: #1677ff;

@@ -1,20 +1,15 @@
-// 完整可用的 emojis.js（适用于 Electron 渲染进程）
-// 功能：网络tab显示固定类别、公司/小组/私人tab支持类别自定义及加号、类别下显示图片、支持右键删除、点击粘贴（需主进程支持）
-// 存储目录 D:/emojis/[tab]/[cat]/，图片文件
 (function() {
-  const {
-    ipcRenderer,
-    shell
-  } = require('electron');
+  const { ipcRenderer } = require('electron');
   const path = require('path');
   const fs = require('fs');
 
-  const NET_CATEGORIES = ["热门", "邀好评图", "售中", "砍价", "客服", "包邮", "有趣", "招呼", "爱你", "抱歉", "纠结", "可爱", "哭", "亲", "稍等",
-    "生气", "笑", "谢谢"
+  const NET_CATEGORIES = [
+    "热门", "邀好评图", "售中", "砍价", "客服", "包邮", "有趣", "招呼",
+    "爱你", "抱歉", "纠结", "可爱", "哭", "亲", "稍等", "生气", "笑", "谢谢"
   ];
   const EMOJIS_BASE = "D:/emojis/";
 
-  let currentTab = "net";
+  let currentTab = "net"; // net/corp/group/private
   let currentCat = NET_CATEGORIES[0];
   let customCats = {
     corp: [],
@@ -22,9 +17,10 @@
     private: []
   };
 
-  const storageKey = (tab) => `emojis.cats.${tab}.v1`;
-
-  // ----- 加载/保存自定义类别 -----
+  // --- 自定义类别存取 ---
+  function storageKey(tab) {
+    return `emojis.cats.${tab}.v1`;
+  }
   function loadCustomCats(tab) {
     try {
       let raw = localStorage.getItem(storageKey(tab));
@@ -34,54 +30,69 @@
     } catch {}
     return [];
   }
-
   function saveCustomCats(tab) {
     try {
       localStorage.setItem(storageKey(tab), JSON.stringify(customCats[tab]));
     } catch {}
   }
 
-  // ----- 渲染Tab栏 -----
+  // --- 渲染tab栏 ---
   function renderTabBar() {
     document.querySelectorAll('.emo-tab-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tab === currentTab);
     });
+    // 显示对应panel
+    document.querySelectorAll('.tabpane').forEach(pane => {
+      pane.classList.toggle('active', pane.id === `emo-tab-${currentTab}`);
+      pane.setAttribute('aria-hidden', pane.id !== `emo-tab-${currentTab}` ? "true" : "false");
+    });
   }
 
-  // ----- 渲染类别栏 -----
-  function renderCatsBar() {
-    const bar = document.getElementById('emo-cats-bar');
-    let cats = [];
-    let showAdd = false;
-    if (currentTab === "net") {
-      cats = NET_CATEGORIES;
-    } else {
-      cats = customCats[currentTab];
-      showAdd = true;
-    }
-    // 若无类别，默认选第一个
-    if (cats.length === 0 && currentTab !== "net") {
-      currentCat = "";
-    }
-    // 若切换类别后当前cat已不存在，自动切到第一个
-    if (!cats.includes(currentCat)) currentCat = cats[0] || "";
-
-    let html = cats.map(c =>
-      `<button class="emo-cat-btn${c === currentCat ? ' active' : ''}" data-cat="${c}">${c}</button>`
-    ).join('');
-    if (showAdd) html += `<button class="emo-cat-add-btn" id="emo-cat-add-btn" title="添加类别">＋</button>`;
-    bar.innerHTML = html;
+  // --- 渲染所有类别栏，只刷新当前tab，其它tab类别栏清空 ---
+  function renderAllEmojiCatsBar() {
+    ['net','corp','group','private'].forEach(tab => {
+      const catsBar = document.getElementById(`emoji-cats-${tab}`);
+      if (tab !== currentTab) {
+        catsBar.innerHTML = ""; // 其它tab类别栏清空
+        return;
+      }
+      let html = '';
+      if (tab === 'net') {
+        html = NET_CATEGORIES.map(cat =>
+          `<button class="emo-cat-btn${cat === currentCat ? ' active' : ''}" data-cat="${cat}">${cat}</button>`
+        ).join('');
+      } else {
+        const cats = customCats[tab] || [];
+        html = cats.map(cat =>
+          `<button class="emo-cat-btn${cat === currentCat ? ' active' : ''}" data-cat="${cat}">${cat}</button>`
+        ).join('');
+        html += `<button class="emo-cat-add-btn" title="添加类别">＋</button>`;
+      }
+      catsBar.innerHTML = html;
+    });
   }
 
-  // ----- 渲染表情图片 -----
-  function renderEmojis() {
-    const grid = document.getElementById('emo-grid');
+  // --- 渲染所有emoji图片区，只刷新当前tab，其它tab图片区清空 ---
+  function renderAllEmojiLists() {
+    ['net','corp','group','private'].forEach(tab => {
+      const grid = document.getElementById(`emoji-list-${tab}`);
+      if (tab !== currentTab) {
+        grid.innerHTML = ""; // 其它tab图片区清空
+        return;
+      }
+      renderEmojiList(tab, currentCat);
+    });
+  }
+
+  // --- 渲染当前tab的emoji图片区 ---
+  function renderEmojiList(tab, cat) {
+    const grid = document.getElementById(`emoji-list-${tab}`);
     grid.innerHTML = '';
-    if (!currentCat) {
+    if (!cat) {
       grid.innerHTML = `<div style="padding:20px;color:#999;">请选择类别</div>`;
       return;
     }
-    const dir = path.join(EMOJIS_BASE, currentTab, currentCat);
+    const dir = path.join(EMOJIS_BASE, tab, cat);
     let files = [];
     try {
       if (fs.existsSync(dir)) {
@@ -112,109 +123,109 @@
     grid.appendChild(frag);
   }
 
-  // ----- 绑定Tab栏点击 -----
-
-  window.addEventListener('DOMContentLoaded', function() {
-    // 事件绑定和初始化
-    const tabbar = document.getElementById('emo-tabbar');
-    if (tabbar) {
-      tabbar.onclick = function(e) {
-        const btn = e.target.closest('.emo-tab-btn');
-        console.log('点击tab:', btn && btn.dataset.tab);
-        if (btn && btn.parentElement.id === 'emo-tabbar') {
-          currentTab = btn.dataset.tab;
-          if (currentTab === "net") {
-            currentCat = NET_CATEGORIES[0];
-          } else {
-            customCats[currentTab] = loadCustomCats(currentTab);
-            currentCat = customCats[currentTab][0] || "";
-          }
-          renderTabBar();
-          renderCatsBar();
-          renderEmojis();
-        }
-      }
+  // --- 切换tab ---
+  function switchTab(tab) {
+    currentTab = tab;
+    if (tab === 'net') {
+      currentCat = NET_CATEGORIES[0];
     } else {
-      console.warn('未找到 #emo-tabbar');
+      customCats[tab] = loadCustomCats(tab);
+      currentCat = customCats[tab][0] || "";
     }
+    renderTabBar();
+    renderAllEmojiCatsBar();
+    renderAllEmojiLists();
+  }
 
-    // 其它事件绑定，init逻辑
+  // --- 切换类别 ---
+  function switchCat(tab, cat) {
+    currentCat = cat;
+    renderAllEmojiCatsBar();
+    renderAllEmojiLists();
+  }
+
+  // --- 初始化 ---
+  function init() {
     ["corp", "group", "private"].forEach(tab => {
       customCats[tab] = loadCustomCats(tab);
     });
     renderTabBar();
-    renderCatsBar();
-    renderEmojis();
+    renderAllEmojiCatsBar();
+    renderAllEmojiLists();
+  }
 
-    // 类别栏、图片区事件绑定（同前）
-    document.getElementById('emo-cats-bar').onclick = async function(e) {
-      /* ... */ }
-    document.getElementById('emo-grid').onclick = function(e) {
-      /* ... */ }
-    document.getElementById('emo-grid').oncontextmenu = function(e) {
-      /* ... */ }
+  window.addEventListener('DOMContentLoaded', function() {
+    init();
+
+    // tab切换
+    document.getElementById('emo-tabbar').onclick = function(e) {
+      const btn = e.target.closest('.emo-tab-btn');
+      if (btn) {
+        const tab = btn.dataset.tab;
+        if (tab !== currentTab) {
+          switchTab(tab);
+        }
+      }
+    };
+
+    // 类别栏点击
+    ['net', 'corp', 'group', 'private'].forEach(tab => {
+      document.getElementById(`emoji-cats-${tab}`).onclick = async function(e) {
+        if (e.target.classList.contains('emo-cat-btn')) {
+          switchCat(tab, e.target.dataset.cat);
+        }
+        if (e.target.classList.contains('emo-cat-add-btn')) {
+          const name = await promptCategoryName();
+          if (name && !customCats[tab].includes(name)) {
+            customCats[tab].push(name);
+            saveCustomCats(tab);
+            currentCat = name;
+            renderAllEmojiCatsBar();
+            renderAllEmojiLists();
+            // 自动创建目录
+            const dir = path.join(EMOJIS_BASE, tab, name);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          }
+        }
+      };
+    });
+
+    // 图片点击（粘贴）
+    ['net', 'corp', 'group', 'private'].forEach(tab => {
+      document.getElementById(`emoji-list-${tab}`).onclick = function(e) {
+        const img = e.target.closest('.emoji-img');
+        if (img) {
+          ipcRenderer.send('emoji:paste', img.dataset.path);
+        }
+      };
+      // 右键菜单删除
+      document.getElementById(`emoji-list-${tab}`).oncontextmenu = function(e) {
+        e.preventDefault();
+        const img = e.target.closest('.emoji-img');
+        if (img) {
+          showContextMenu(e.pageX, e.pageY, [{
+            label: "删除",
+            click: () => deleteEmoji(img.dataset.path, tab, currentCat)
+          }]);
+        }
+      };
+    });
   });
 
-
-  // ----- 绑定类别栏点击 -----
-  document.getElementById('emo-cats-bar').onclick = async function(e) {
-    if (e.target.classList.contains('emo-cat-btn')) {
-      currentCat = e.target.dataset.cat;
-      renderCatsBar();
-      renderEmojis();
-    }
-    if (e.target.classList.contains('emo-cat-add-btn')) {
-      const name = await promptCategoryName();
-      if (name && !customCats[currentTab].includes(name)) {
-        customCats[currentTab].push(name);
-        saveCustomCats(currentTab);
-        currentCat = name;
-        renderCatsBar();
-        renderEmojis();
-        // 自动创建目录
-        const dir = path.join(EMOJIS_BASE, currentTab, name);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, {
-          recursive: true
-        });
-      }
-    }
-  };
-
-  // ----- 绑定图片点击（粘贴表情） -----
-  document.getElementById('emo-grid').onclick = function(e) {
-    const img = e.target.closest('.emoji-img');
-    if (img) {
-      // 通知主进程粘贴图片到剪贴板
-      ipcRenderer.send('emoji:paste', img.dataset.path);
-    }
-  };
-
-  // ----- 右键菜单删除 -----
-  document.getElementById('emo-grid').oncontextmenu = function(e) {
-    e.preventDefault();
-    const img = e.target.closest('.emoji-img');
-    if (img) {
-      showContextMenu(e.pageX, e.pageY, [{
-        label: "删除",
-        click: () => deleteEmoji(img.dataset.path)
-      }]);
-    }
-  };
-
-  // ----- 删除表情图片 -----
-  function deleteEmoji(filePath) {
+  // --- 删除表情图片 ---
+  function deleteEmoji(filePath, tab, cat) {
     if (!filePath) return;
     if (confirm("确定要删除此表情图片吗？")) {
       try {
         fs.unlinkSync(filePath);
-        renderEmojis();
+        renderEmojiList(tab, cat);
       } catch (e) {
         alert("删除失败：" + e.message);
       }
     }
   }
 
-  // ----- 弹出类别添加输入 -----
+  // --- 弹出类别添加输入 ---
   function promptCategoryName() {
     return new Promise(resolve => {
       const mask = document.createElement('div');
@@ -237,38 +248,43 @@
       const btnOk = mask.querySelector('.btn-ok');
       const btnCancel = mask.querySelector('.btn-cancel');
       input.value = '';
-      setTimeout(() => {
-        input.focus();
-      }, 0);
+      setTimeout(() => { input.focus(); }, 0);
       const close = (val) => {
         if (mask && mask.parentNode) mask.parentNode.removeChild(mask);
         resolve(val);
       };
       btnOk.addEventListener('click', () => close(input.value.trim()));
       btnCancel.addEventListener('click', () => close(null));
-      mask.addEventListener('click', (e) => {
-        if (e.target === mask) close(null);
-      });
+      mask.addEventListener('click', (e) => { if (e.target === mask) close(null); });
       dialog.addEventListener('click', (e) => e.stopPropagation());
       mask.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          btnOk.click();
-        }
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          btnCancel.click();
-        }
+        if (e.key === 'Enter') { e.preventDefault(); btnOk.click(); }
+        if (e.key === 'Escape') { e.preventDefault(); btnCancel.click(); }
       });
-      input.addEventListener('keydown', (e) => {
-        e.stopPropagation();
-      });
+      input.addEventListener('keydown', (e) => { e.stopPropagation(); });
     });
   }
-
-  // ----- 右键菜单 -----
+function renderEmojiCatsBar(tab) {
+  const catsList = document.getElementById(`emoji-cats-list-${tab}`);
+  const catsOps = document.getElementById(`emoji-cats-ops-${tab}`);
+  let html = '';
+  if (tab === 'net') {
+    html = NET_CATEGORIES.map(cat =>
+      `<button class="emo-cat-btn${cat === currentCat ? ' active' : ''}" data-cat="${cat}">${cat}</button>`
+    ).join('');
+    catsList.innerHTML = html;
+    catsOps.style.display = 'none';
+  } else {
+    const cats = customCats[tab] || [];
+    html = cats.map(cat =>
+      `<button class="emo-cat-btn${cat === currentCat ? ' active' : ''}" data-cat="${cat}">${cat}</button>`
+    ).join('');
+    catsList.innerHTML = html;
+    catsOps.style.display = '';
+  }
+}
+  // --- 右键菜单 ---
   function showContextMenu(x, y, items) {
-    // 简易右键菜单，仅渲染在页面（可换为 Electron 的Menu）
     let m = document.getElementById('emo-context-menu');
     if (m) m.remove();
     m = document.createElement('div');
@@ -289,26 +305,6 @@
       if (items[idx] && typeof items[idx].click === 'function') items[idx].click();
       m.remove();
     };
-    document.addEventListener('click', () => m.remove(), {
-      once: true
-    });
+    document.addEventListener('click', () => m.remove(), { once: true });
   }
-
-  // ----- 初始化 -----
-  function init() {
-    // 载入本地自定义类别
-    ["corp", "group", "private"].forEach(tab => {
-      customCats[tab] = loadCustomCats(tab);
-    });
-    renderTabBar();
-    renderCatsBar();
-    renderEmojis();
-  }
-
-  if (document.readyState === 'loading') {
-    window.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
-
 })();
