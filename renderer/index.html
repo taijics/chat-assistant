@@ -55,15 +55,18 @@
       </div>
 
       <div class="tabpanes">
-        <section class="tabpane active" role="tabpanel" id="tab-corp" aria-labelledby="tabbtn-corp" aria-hidden="false">
-          <div class="phrase-cats" id="phrase-cats"></div>
-          <div class="phrase-list" id="phrase-list"></div>
+        <!-- 公司话术 -->
+        <section class="tabpane active" id="tab-corp" aria-labelledby="tabbtn-corp" aria-hidden="false">
+          <div class="phrase-cats" id="phrase-cats-corp"></div>
+          <div class="phrase-list" id="phrase-list-corp"></div>
         </section>
-        <section class="tabpane" role="tabpanel" id="tab-group" aria-labelledby="tabbtn-group" aria-hidden="true">
+        <!-- 小组话术 -->
+        <section class="tabpane" id="tab-group" aria-labelledby="tabbtn-group" aria-hidden="true">
           <div class="phrase-cats" id="phrase-cats-group"></div>
           <div class="phrase-list" id="phrase-list-group"></div>
         </section>
-        <section class="tabpane" role="tabpanel" id="tab-private" aria-labelledby="tabbtn-private" aria-hidden="true">
+        <!-- 私人话术 -->
+        <section class="tabpane" id="tab-private" aria-labelledby="tabbtn-private" aria-hidden="true">
           <div class="phrase-cats" id="phrase-cats-private"></div>
           <div class="phrase-list" id="phrase-list-private"></div>
         </section>
@@ -76,12 +79,12 @@
     <div id="ai-area" style="display:none;" class="padding10">
       <section class="tabpane" role="tabpanel" id="tab-ai" aria-labelledby="tabbtn-ai" aria-hidden="true">
         <!-- 类别栏 -->
-       <!-- <div class="ai-category-bar" id="ai-category-bar">
+         <div class="ai-category-bar" id="ai-category-bar">
           <button class="ai-cat-btn" data-cat="咨询中">咨询中</button>
           <button class="ai-cat-btn" data-cat="已成交">已成交</button>
           <button class="ai-cat-btn" data-cat="已结束">已结束</button>
           <button class="ai-cat-btn" data-cat="退款中">退款中</button>
-        </div> -->
+        </div> 
 
         <!-- 客户昵称列表弹窗（默认隐藏，点击类别后出现） -->
         <div class="ai-customer-list-popup" id="ai-customer-list-popup" style="display:none;">
@@ -157,7 +160,7 @@
           </div>
 
           <div class="aimodels-view">
-           <!-- <div id="aimodels-host" class="aimodels-host"></div> -->
+            <!-- <div id="aimodels-host" class="aimodels-host"></div> -->
             <iframe id="aimodels-fallback" hidden sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
               referrerpolicy="no-referrer"></iframe>
           </div>
@@ -168,14 +171,15 @@
 
 
     <!-- 本地表情 -->
-    <div id="emojis-area" style="display:none;" class="padding10">
-      <section class="tabpane" role="tabpanel" id="tab-emojis" aria-labelledby="tabbtn-emojis" aria-hidden="true">
-        <div class="media-toolbar">
-          <button id="emo-pick">选择表情文件夹</button>
-          <span class="media-folder" id="emo-folder"></span>
-        </div>
-        <div class="media-grid small" id="emo-grid"></div>
-      </section>
+    <div id="emojis-area" class="padding10">
+      <div class="tabbar" id="emo-tabbar">
+        <button class="emo-tab-btn active" data-tab="net">网络</button>
+        <button class="emo-tab-btn" data-tab="corp">公司</button>
+        <button class="emo-tab-btn" data-tab="group">小组</button>
+        <button class="emo-tab-btn" data-tab="private">私人</button>
+      </div>
+      <div class="emo-cats-bar" id="emo-cats-bar"></div>
+      <div class="media-grid small" id="emo-grid"></div>
     </div>
 
 

@@ -383,3 +383,38 @@
   background: #1677ff;
   color: #fff;
 }
+
+/* 复制自 .tab-btn 样式，专供表情tab使用，互不影响 */
+.emo-tab-btn {
+  appearance: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: #333;
+  padding: 8px 14px;
+  margin: 0;
+  margin-bottom: -1px;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1;
+  outline: none;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.emo-tab-btn:hover {
+  background: #eef5ff;
+}
+
+.emo-tab-btn:focus-visible {
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.35);
+  border-radius: 8px 8px 0 0;
+}
+
+.emo-tab-btn.active {
+  background: #fff;
+  color: #1677ff;
+  border-color: #ddd;
+  border-bottom-color: #fff;
+}
