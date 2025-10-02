@@ -79,12 +79,12 @@
     <div id="ai-area" style="display:none;" class="padding10">
       <section class="tabpane" role="tabpanel" id="tab-ai" aria-labelledby="tabbtn-ai" aria-hidden="true">
         <!-- 类别栏 -->
-         <div class="ai-category-bar" id="ai-category-bar">
+        <div class="ai-category-bar" id="ai-category-bar">
           <button class="ai-cat-btn" data-cat="咨询中">咨询中</button>
           <button class="ai-cat-btn" data-cat="已成交">已成交</button>
           <button class="ai-cat-btn" data-cat="已结束">已结束</button>
           <button class="ai-cat-btn" data-cat="退款中">退款中</button>
-        </div> 
+        </div>
 
         <!-- 客户昵称列表弹窗（默认隐藏，点击类别后出现） -->
         <div class="ai-customer-list-popup" id="ai-customer-list-popup" style="display:none;">
@@ -171,17 +171,42 @@
 
 
     <!-- 本地表情 -->
-    <div id="emojis-area" class="padding10">
-      <div class="tabbar" id="emo-tabbar">
-        <button class="emo-tab-btn active" data-tab="net">网络</button>
-        <button class="emo-tab-btn" data-tab="corp">公司</button>
-        <button class="emo-tab-btn" data-tab="group">小组</button>
-        <button class="emo-tab-btn" data-tab="private">私人</button>
+    <!-- 本地表情 -->
+    <div id="emojis-area" class="padding10" style="display:none;">
+      <div class="tabbar" id="emo-tabbar" role="tablist" aria-label="表情类别">
+        <button class="emo-tab-btn active" role="tab" id="emotab-net" aria-controls="emo-tab-net" aria-selected="true"
+          tabindex="0" data-tab="net">网络</button>
+        <button class="emo-tab-btn" role="tab" id="emotab-corp" aria-controls="emo-tab-corp" aria-selected="false"
+          tabindex="-1" data-tab="corp">公司</button>
+        <button class="emo-tab-btn" role="tab" id="emotab-group" aria-controls="emo-tab-group" aria-selected="false"
+          tabindex="-1" data-tab="group">小组</button>
+        <button class="emo-tab-btn" role="tab" id="emotab-private" aria-controls="emo-tab-private" aria-selected="false"
+          tabindex="-1" data-tab="private">私人</button>
       </div>
-      <div class="emo-cats-bar" id="emo-cats-bar"></div>
-      <div class="media-grid small" id="emo-grid"></div>
-    </div>
 
+      <div class="tabpanes">
+        <!-- 网络 -->
+        <section class="tabpane active" id="emo-tab-net" aria-labelledby="emotab-net" aria-hidden="false">
+          <div class="emoji-cats" id="emoji-cats-net"></div>
+          <div class="emoji-list media-grid small" id="emoji-list-net"></div>
+        </section>
+        <!-- 公司 -->
+        <section class="tabpane" id="emo-tab-corp" aria-labelledby="emotab-corp" aria-hidden="true">
+          <div class="emoji-cats" id="emoji-cats-corp"></div>
+          <div class="emoji-list media-grid small" id="emoji-list-corp"></div>
+        </section>
+        <!-- 小组 -->
+        <section class="tabpane" id="emo-tab-group" aria-labelledby="emotab-group" aria-hidden="true">
+          <div class="emoji-cats" id="emoji-cats-group"></div>
+          <div class="emoji-list media-grid small" id="emoji-list-group"></div>
+        </section>
+        <!-- 私人 -->
+        <section class="tabpane" id="emo-tab-private" aria-labelledby="emotab-private" aria-hidden="true">
+          <div class="emoji-cats" id="emoji-cats-private"></div>
+          <div class="emoji-list media-grid small" id="emoji-list-private"></div>
+        </section>
+      </div>
+    </div>
 
 
     <!-- 右侧缩放条（不可见，仅用于命中拖动） -->
@@ -195,6 +220,7 @@
     <script src="./js/menu.js"></script>
     <script src="./js/resize.js"></script>
     <script src="./js/ai-dragdrop.js"></script>
+    <script src="./js/emojis.js"></script>
 
 
   </body>
