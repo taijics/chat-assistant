@@ -31,7 +31,7 @@
   const http = require('http');
 
   function getWeChatOCRText(callback) {
-    const url = "http://127.0.0.1:5678/screenshot_ocr?title=微信&img=wechat.png";
+    const url = "http://127.0.0.1:5678/screenshot_ocr?img=wecom.png";
     http.get(url, res => {
       let data = '';
       res.on('data', chunk => data += chunk);
@@ -51,16 +51,16 @@
   }
 
   // 按钮事件里用
-  getWeChatOCRText(function(text) {
-    // 这里 text 就是OCR识别的聊天内容
-    // 你可以用js代码插入到AI选项卡的文本框
-    document.querySelector("#ai-context").value = text;
-  });
-  document.getElementById('btn-wechat-ocr').onclick = function() {
-    getWeChatOCRText(function(text) {
-      document.getElementById('ai-context').value = text;
+  /*  getWeChatOCRText(function(text) {
+      // 这里 text 就是OCR识别的聊天内容
+      // 你可以用js代码插入到AI选项卡的文本框
+      document.querySelector("#ai-context").value = text;
     });
-  };
+    document.getElementById('btn-wechat-ocr').onclick = function() {
+      getWeChatOCRText(function(text) {
+        document.getElementById('ai-context').value = text;
+      });
+    }; */
 
   function resetScreenshotArea() {
     fetch('http://127.0.0.1:5678/reset_area')
@@ -100,7 +100,9 @@
     }, 1000);
   }
   // 绑定按钮
-  document.getElementById('resetAreaBtn').onclick = resetScreenshotArea;
+  // 绑定按钮
+  const resetBtn = document.getElementById('resetAreaBtn');
+  if (resetBtn) resetBtn.onclick = resetScreenshotArea;
 
   function stripMarkdown(s) {
     return String(s || '')
@@ -274,18 +276,33 @@
     btn.addEventListener('click', async () => {
       const orig = btn.textContent;
       btn.disabled = true;
-      btn.textContent = '生成中…';
+      btn.textContent = '截图中…';
       try {
-        const agentConfig = getSelectedAgentConfig();
-        const finalText = await requestAiRaw(ta.value, agentConfig);
-        const items = parseSuggestionsFromText(finalText);
-        renderSuggestions(items);
-        ta.value = '';
+        // 1) 调用OCR获取聊天文本（企业微信）
+        const ocrText = await new Promise(resolve => getWeChatOCRText(resolve));
+        const cleaned = normalizeText(ocrText);
+        if (!cleaned || /^截图|OCR|解析失败|请求错误/.test(cleaned)) {
+          showHintBox('截图/OCR失败，请重试');
+          return;
+        }
+        // 2) 可选：把识别结果放入输入框
+        ta.value = cleaned;
         try {
           ta.dispatchEvent(new Event('input', {
             bubbles: true
           }));
         } catch {}
+
+        // 3) 发送给智能体生成建议
+        btn.textContent = '生成中…';
+        const agentConfig = getSelectedAgentConfig();
+        const finalText = await requestAiRaw(cleaned, agentConfig);
+        const items = parseSuggestionsFromText(finalText);
+        renderSuggestions(items);
+
+        // 如果想清空输入框，取消注释下面两行
+        // ta.value = '';
+        // try { ta.dispatchEvent(new Event('input', { bubbles: true })); } catch {}
       } finally {
         btn.disabled = false;
         btn.textContent = orig;
@@ -378,7 +395,7 @@
   }
 
   // AI分类客户
-//  const categoryBar = document.getElementById('ai-category-bar');
+  //  const categoryBar = document.getElementById('ai-category-bar');
   const customerPopup = document.getElementById('ai-customer-list-popup');
   const customerList = document.getElementById('ai-customer-list');
   const customerSearch = document.getElementById('ai-customer-search');
@@ -441,18 +458,18 @@
   let filteredCustomerList = [];
   let selectedCustomerId = '';
 
-/*  categoryBar.addEventListener('click', (e) => {
-    const btn = e.target.closest('.ai-cat-btn');
-    if (!btn) return;
-    [...categoryBar.querySelectorAll('.ai-cat-btn')].forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    selectedCategory = btn.dataset.cat;
-    filteredCustomerList = customers.filter(c => c.category === selectedCategory);
-    renderCustomerList(filteredCustomerList);
-    customerPopup.style.display = 'block';
-    selectedCustomerId = '';
-    chatHistory.innerHTML = '';
-  }); */
+  /*  categoryBar.addEventListener('click', (e) => {
+      const btn = e.target.closest('.ai-cat-btn');
+      if (!btn) return;
+      [...categoryBar.querySelectorAll('.ai-cat-btn')].forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedCategory = btn.dataset.cat;
+      filteredCustomerList = customers.filter(c => c.category === selectedCategory);
+      renderCustomerList(filteredCustomerList);
+      customerPopup.style.display = 'block';
+      selectedCustomerId = '';
+      chatHistory.innerHTML = '';
+    }); */
 
   customerSearch.addEventListener('input', () => {
     const kw = customerSearch.value.trim();
@@ -496,23 +513,23 @@
     ).join('');
   }
 
-  document.addEventListener('click', function(e) {
-    const popup = document.getElementById('ai-customer-list-popup');
-    const categoryBar = document.getElementById('ai-category-bar');
-    if (!popup || popup.style.display === 'none') return;
-    const isInPopup = popup.contains(e.target);
-    const isInBar = categoryBar.contains(e.target);
-    if (!isInPopup && !isInBar) {
-      popup.style.display = 'none';
-    }
-  });
+ document.addEventListener('click', function(e) {
+   const popup = document.getElementById('ai-customer-list-popup');
+   const categoryBar = document.getElementById('ai-category-bar');
+   if (!popup || popup.style.display === 'none') return;
+   const isInPopup = popup.contains(e.target);
+   const isInBar = categoryBar ? categoryBar.contains(e.target) : false; // 加空值保护
+   if (!isInPopup && !isInBar) {
+     popup.style.display = 'none';
+   }
+ });
 
-  document.getElementById('ai-generate').addEventListener('click', async () => {
-    const ctxMsgs = messages[selectedCustomerId] || [];
-    const context = ctxMsgs.map(m => `${m.sender}: ${m.content}`).join('\n');
-    aiContext.value = context + '\n' + (aiContext.value || '');
-    // 触发已有AI生成流程...
-  });
+  /*  document.getElementById('ai-generate').addEventListener('click', async () => {
+      const ctxMsgs = messages[selectedCustomerId] || [];
+      const context = ctxMsgs.map(m => `${m.sender}: ${m.content}`).join('\n');
+      aiContext.value = context + '\n' + (aiContext.value || '');
+      // 触发已有AI生成流程...
+    }); */
 
   customerPopup.style.display = 'none';
 
