@@ -27,6 +27,13 @@ static Napi::ThreadSafeFunction g_tsfn;
 static bool g_tsfn_inited = false;
 static UINT_PTR g_retryTimer = 0;
 static HWND g_messageWindow = nullptr;
+static bool g_debug = false;
+
+static void DebugOut(const std::wstring& w) {
+  if (!g_debug) return;
+  OutputDebugStringW(w.c_str());
+  OutputDebugStringW(L"\n");
+}
 
 // Allowed process base names (lowercase)
 static const wchar_t* kAllowedProcNames[] = {
@@ -45,6 +52,7 @@ struct EventPayload {
   std::wstring procName;
 };
 
+// Helpers
 static std::wstring ToLower(const std::wstring& s) {
   std::wstring r = s;
   std::transform(r.begin(), r.end(), r.begin(), towlower);
@@ -103,21 +111,133 @@ static void FireEvent(EventType t, HWND hwnd, const std::wstring& procName) {
   });
 }
 
+// Heuristic: exclude viewer windows (image/video)
+static bool IsLikelyViewerWindow(HWND hwnd) {
+  wchar_t cls[256] = {0};
+  GetClassNameW(hwnd, cls, 256);
+  std::wstring cl = ToLower(std::wstring(cls));
+
+  wchar_t title[512] = {0};
+  GetWindowTextW(hwnd, title, 512);
+  std::wstring tl = ToLower(std::wstring(title));
+
+  bool viewer = false;
+
+  // Class hints
+  if (cl.find(L"image") != std::wstring::npos ||
+      cl.find(L"picture") != std::wstring::npos ||
+      cl.find(L"viewer") != std::wstring::npos ||
+      cl.find(L"photo")  != std::wstring::npos ||
+      cl.find(L"preview")!= std::wstring::npos) {
+    viewer = true;
+  }
+
+  // Title hints
+  if (tl.find(L"图片") != std::wstring::npos ||
+      tl.find(L"查看") != std::wstring::npos ||
+      tl.find(L"image") != std::wstring::npos ||
+      tl.find(L"viewer") != std::wstring::npos ||
+      tl.find(L"photo") != std::wstring::npos ||
+      tl.find(L"预览") != std::wstring::npos) {
+    viewer = true;
+  }
+
+  // File extension in title
+  const wchar_t* exts[] = { L".png", L".jpg", L".jpeg", L".gif", L".bmp", L".webp", L".mp4", L".mov", L".avi", L".mkv" };
+  for (auto ext : exts) {
+    if (tl.rfind(ext) != std::wstring::npos) { viewer = true; break; }
+  }
+
+  LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
+  LONG_PTR ex    = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+  bool hasFrame  = (style & WS_THICKFRAME) != 0;
+  bool inTaskbar = (ex & WS_EX_APPWINDOW) != 0;
+  if (!hasFrame && !inTaskbar) {
+    // Frameless popup
+    viewer = true;
+  }
+
+  if (viewer) {
+    DebugOut(L"[WM viewer-detect] hwnd=" + std::to_wstring((uintptr_t)hwnd));
+  }
+  return viewer;
+}
+
+// More tolerant primary window check
+static bool IsTopLevelPrimaryWindow(HWND hwnd) {
+  if (GetWindow(hwnd, GW_OWNER) != NULL) return false;
+  LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
+  LONG_PTR ex    = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+  if (style & WS_CHILD) return false;
+  if (ex & WS_EX_TOOLWINDOW) return false;
+  // Allow frameless main windows (WeChat often custom)
+  RECT r; if (!GetWindowRect(hwnd,&r)) return false;
+  LONG w = r.right - r.left;
+  LONG h = r.bottom - r.top;
+  if (w < 400 || h < 300) return false;
+  return true;
+}
+
+// Try to positively identify main chat window (class names we may refine)
+static bool IsWeChatMainWindow(HWND hwnd, const std::wstring& baseLower) {
+  if (baseLower.find(L"wechat") == std::wstring::npos &&
+      baseLower.find(L"weixin") == std::wstring::npos &&
+      baseLower.find(L"企业微信") == std::wstring::npos &&
+      baseLower.find(L"wework") == std::wstring::npos) {
+    return false;
+  }
+  wchar_t cls[256] = {0};
+  GetClassNameW(hwnd, cls, 256);
+  std::wstring cl = ToLower(std::wstring(cls));
+
+  // Known or probable main classes (expand once we see logs)
+  const wchar_t* mainClasses[] = {
+    L"wechatmainwindow", L"wechatmainwndforpc", L"mainwindow", L"wxworkwindow"
+  };
+  for (auto mc : mainClasses) {
+    if (cl.find(mc) != std::wstring::npos) return true;
+  }
+  // Fallback: large window & not a viewer
+  RECT r; GetWindowRect(hwnd, &r);
+  LONG w = r.right - r.left;
+  LONG h = r.bottom - r.top;
+  if (w >= 600 && h >= 400 && !IsLikelyViewerWindow(hwnd)) return true;
+  return false;
+}
+
 static bool IsWeChatCandidate(HWND hwnd) {
   if (!IsWindow(hwnd)) return false;
   if (!IsWindowVisible(hwnd)) return false;
   if (IsWindowCloaked(hwnd)) return false;
+
   std::wstring baseLower;
-  if (GetProcessBaseNameLower(hwnd, baseLower)) {
-    if (baseLower == L"telegram desktop.exe" || baseLower == L"whatsapp.exe" || baseLower == L"telegram.exe") return true;
-    if (GetWindow(hwnd, GW_OWNER) != NULL) return false;
+  bool hasProc = GetProcessBaseNameLower(hwnd, baseLower);
+
+  if (hasProc) {
+    bool allowedProc = false;
     for (auto pn : kAllowedProcNames) {
-      if (baseLower == pn) return true;
+      if (baseLower == pn) { allowedProc = true; break; }
+    }
+    if (allowedProc) {
+      if (!IsTopLevelPrimaryWindow(hwnd)) return false;
+
+      // For WeChat family: positively identify main, exclude viewer
+      if (baseLower.find(L"wechat") != std::wstring::npos ||
+          baseLower.find(L"weixin") != std::wstring::npos) {
+        if (IsLikelyViewerWindow(hwnd)) return false;
+        // If not main window (heuristic), still allow first; we will only select largest later
+        return true;
+      }
+      // For enterprise or other allowed processes
+      return true;
     }
   }
+
+  // Title fallback
   wchar_t title[512] = {0};
   GetWindowTextW(hwnd, title, 512);
   std::wstring tl = ToLower(std::wstring(title));
+  if (!IsTopLevelPrimaryWindow(hwnd)) return false;
   for (auto &kw : g_keywords_lower) {
     if (!kw.empty() && tl.find(kw) != std::wstring::npos) return true;
   }
@@ -128,7 +248,22 @@ struct FindState { std::map<HWND, std::wstring> foundWindows; };
 
 static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
   FindState* st = reinterpret_cast<FindState*>(lParam);
-  if (!st) return FALSE;
+  if (g_debug) {
+    wchar_t cls[128] = {0}; GetClassNameW(hwnd, cls, 128);
+    wchar_t title[256] = {0}; GetWindowTextW(hwnd, title, 256);
+    RECT r; GetWindowRect(hwnd, &r);
+    LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
+    LONG_PTR ex    = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+    std::wstring info = L"[WM Enum] hwnd=" + std::to_wstring((uintptr_t)hwnd) +
+      L" class=" + cls + L" title=" + title +
+      L" style=" + std::to_wstring(style) +
+      L" ex=" + std::to_wstring(ex) +
+      L" rect=(" + std::to_wstring(r.left) + L"," + std::to_wstring(r.top) + L"," +
+                  std::to_wstring(r.right) + L"," + std::to_wstring(r.bottom) + L")";
+    DebugOut(info);
+  }
+  if (!st) return TRUE;
+
   if (IsWeChatCandidate(hwnd)) {
     std::wstring baseLower;
     if (GetProcessBaseNameLower(hwnd, baseLower)) {
@@ -138,6 +273,7 @@ static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
         LONG h = r.bottom - r.top;
         if (w > 50 && h > 50) {
           st->foundWindows[hwnd] = baseLower;
+          DebugOut(L"[WM Enum candidate] hwnd=" + std::to_wstring((uintptr_t)hwnd));
         }
       }
     }
@@ -147,14 +283,45 @@ static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
 
 static void TryFindWeChat() {
   std::lock_guard<std::mutex> lock(g_enumMutex);
+  std::map<HWND, std::wstring> prev = g_chatHwndMap;
+
   FindState st;
   EnumWindows(EnumWindowsProc, reinterpret_cast<LPARAM>(&st));
+
+  // Pick a single primary window: largest candidate (excluding viewers already)
+  HWND bestHwnd = nullptr;
+  std::wstring bestProc;
+  LONG bestArea = 0;
   for (const auto& kv : st.foundWindows) {
-    if (g_chatHwndMap.find(kv.first) == g_chatHwndMap.end()) {
-      FireEvent(EVT_FOUND, kv.first, kv.second);
+    RECT r;
+    if (!GetWindowRect(kv.first, &r)) continue;
+    LONG w = r.right - r.left;
+    LONG h = r.bottom - r.top;
+    LONG area = (w > 0 && h > 0) ? (w * h) : 0;
+    if (area > bestArea) {
+      bestArea = area;
+      bestHwnd = kv.first;
+      bestProc = kv.second;
     }
   }
-  g_chatHwndMap = st.foundWindows;
+
+  std::map<HWND, std::wstring> newMap;
+  if (bestHwnd) {
+    DebugOut(L"[WM choose main] hwnd=" + std::to_wstring((uintptr_t)bestHwnd));
+    if (prev.find(bestHwnd) == prev.end()) {
+      FireEvent(EVT_FOUND, bestHwnd, bestProc);
+    }
+    newMap[bestHwnd] = bestProc;
+  } else {
+    if (!prev.empty()) {
+      // All gone: fire destroyed for previous main
+      for (auto &kv : prev) {
+        DebugOut(L"[WM main gone] hwnd=" + std::to_wstring((uintptr_t)kv.first));
+        FireEvent(EVT_DESTROYED, kv.first, kv.second);
+      }
+    }
+  }
+  g_chatHwndMap.swap(newMap);
 }
 
 static VOID CALLBACK RetryTimerProc(HWND, UINT, UINT_PTR, DWORD) {
@@ -178,7 +345,6 @@ static void CALLBACK WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd,
     case EVENT_OBJECT_DESTROY:
       FireEvent(EVT_DESTROYED, hwnd, procName);
       g_chatHwndMap.erase(hwnd);
-      TryFindWeChat();
       break;
     default: break;
   }
@@ -244,6 +410,13 @@ Napi::Value Start(const Napi::CallbackInfo& info) {
     Napi::TypeError::New(env, "options.keywords must be an array of strings").ThrowAsJavaScriptException();
     return env.Null();
   }
+  if (opts.Has("debug") && opts.Get("debug").IsBoolean()) {
+    g_debug = opts.Get("debug").As<Napi::Boolean>().Value();
+  } else {
+    const char* envDbg = getenv("WECHAT_MONITOR_DEBUG");
+    g_debug = envDbg && (strcmp(envDbg, "1") == 0 || _stricmp(envDbg, "true") == 0);
+  }
+
   Napi::Array arr = opts.Get("keywords").As<Napi::Array>();
   g_keywords_lower.clear();
   for (uint32_t i = 0; i < arr.Length(); ++i) {
@@ -290,24 +463,19 @@ Napi::Value SetZOrder(const Napi::CallbackInfo& info) {
   }
   Napi::Buffer<uint8_t> buf = info[0].As<Napi::Buffer<uint8_t>>();
   uintptr_t wParam = (uintptr_t) info[1].As<Napi::Number>().Int64Value();
-
   std::string chatType = (info.Length() >= 3 && info[2].IsString()) ? info[2].As<Napi::String>().Utf8Value() : "";
 
   HWND assistant = nullptr;
   if (buf.Length() >= sizeof(HWND)) assistant = *reinterpret_cast<HWND*>(buf.Data());
   HWND chatWindow = (HWND) wParam;
+
   if (!assistant || !chatWindow) return Napi::Boolean::New(env, false);
+  if (!IsWindow(assistant) || !IsWindow(chatWindow)) return Napi::Boolean::New(env, false);
+  if (IsWindowCloaked(chatWindow) || !IsWindowVisible(chatWindow)) return Napi::Boolean::New(env, false);
 
   HWND insertAfter = chatWindow;
-  if (chatType.find("wechat") != std::string::npos || chatType.find("企业微信") != std::string::npos) {
-    insertAfter = HWND_TOPMOST;
-  }
-  BOOL ok = SetWindowPos(
-    assistant,
-    insertAfter,
-    0, 0, 0, 0,
-    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING
-  );
+  BOOL ok = SetWindowPos(assistant, insertAfter, 0, 0, 0, 0,
+    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING);
   return Napi::Boolean::New(env, ok ? true : false);
 }
 

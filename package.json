@@ -4,9 +4,10 @@
   "description": "微信聊天助手",
   "author": "Your Name",
   "main": "main/index.js",
+  "packageManager": "pnpm@9.0.0",
   "scripts": {
-    "start": "set NODE_OPTIONS= && electron .",
-    "postinstall": "electron-builder install-app-deps",
+    "start": "cross-env NODE_OPTIONS= electron .",
+    "postinstall": "powershell -NoProfile -Command \"$c=@(); $c+=Join-Path $env:APPDATA 'npm/pnpm.cmd'; $c+=Join-Path $env:LOCALAPPDATA 'node-corepack/pnpm/pnpm.cmd'; if($env:NVM_SYMLINK){ $c+=Join-Path $env:NVM_SYMLINK 'pnpm.cmd' }; $c+=Join-Path $env:ProgramFiles 'nodejs/corepack/shims/pnpm.cmd'; $c+=Join-Path $env:ProgramFiles 'nodejs/pnpm.cmd'; $p=$c | Where-Object { Test-Path $_ } | Select-Object -First 1; if(-not $p){ Write-Error 'pnpm.cmd not found in PATH or common locations'; exit 1 }; Remove-Item Env:npm_execpath -ErrorAction SilentlyContinue; $env:npm_execpath=$p; electron-builder install-app-deps\"",
     "rebuild": "electron-rebuild -f -w node-window-manager",
     "build:win": "set CSC_IDENTITY_AUTO_DISCOVERY=false && set ELECTRON_BUILDER_DISABLE_CODE_SIGNING=true && electron-builder --win",
     "build:win:portable": "set CSC_IDENTITY_AUTO_DISCOVERY=false && set ELECTRON_BUILDER_DISABLE_CODE_SIGNING=true && electron-builder --win portable",
@@ -68,12 +69,15 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
+    "cross-env": "^7.0.3",
     "electron": "^30.5.1",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "node-addon-api": "^8.5.0"
   },
   "dependencies": {
     "extract-file-icon": "^0.3.2",
     "node-fetch": "^2.7.0",
+    "node-window-manager": "^2.2.4",
     "screenshot-desktop": "^1.15.2",
     "sharp": "^0.34.4",
     "tesseract.js": "^6.0.1"

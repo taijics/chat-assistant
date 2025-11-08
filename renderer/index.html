@@ -99,7 +99,7 @@
         <div class="ai-input">
           <textarea id="ai-context" placeholder="请输入问题，AI将结合聊天上下文为你答复"></textarea>
           <div class="ai-actions">
-           <!-- <button id="resetAreaBtn">重选截图框</button> -->
+            <!-- <button id="resetAreaBtn">重选截图框</button> -->
             <!-- <button id="btn-wechat-ocr">微信截图</button> -->
             <button id="ai-generate">生成建议</button>
           </div>
@@ -214,8 +214,7 @@
       <span class="footer-right">
         <span class="vip-badge">VIP</span>
         <span class="footer-text">官网</span>
-        <span class="footer-text">taijics</span>
-      </span>
+        <span class="footer-text footer-account" id="footer-account" role="button" title="登录">登录</span>
     </div>
 
     <!-- 右侧缩放条（不可见，仅用于命中拖动） -->
@@ -231,6 +230,9 @@
     <script src="./js/ai-dragdrop.js"></script>
     <script src="./js/emojis.js"></script>
 
+    <!-- 新增：通用 API 与 登录逻辑 -->
+    <script src="./js/api.js"></script>
+    <script src="./js/auth.js"></script>
 
   </body>
 </html>
