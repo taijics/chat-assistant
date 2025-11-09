@@ -1,7 +1,5 @@
 (function() {
-  const {
-    ipcRenderer
-  } = require('electron');
+  const { ipcRenderer } = require('electron');
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -11,6 +9,7 @@
     if (currentTab === 'private') return 2;
     return 0;
   }
+
   // 记录“类别名称 -> 后端类别ID”的映射，给新增短语用
   let allTypeIdMap = {
     corp: {},
@@ -50,20 +49,18 @@
   }
 
   // 不再读取 localStorage，直接返回空结构
-  function loadData( /* tab */ ) {
-    return {
-      cats: []
-    };
+  function loadData(/* tab */) {
+    return { cats: [] };
   }
   // 不再写入 localStorage（改为空操作）
-  function saveData( /* tab, data */ ) {}
+  function saveData(/* tab, data */) {}
 
   // 不再读取 localStorage，默认返回数据中的第一个类目名或空
   function loadActiveCat(tab, data) {
     return data && Array.isArray(data.cats) && data.cats.length ? data.cats[0].name : '';
   }
   // 不再写入 localStorage（改为空操作）
-  function saveActiveCat( /* tab, name */ ) {}
+  function saveActiveCat(/* tab, name */) {}
 
   // 初始化为纯内存数据
   let allData = {
@@ -97,6 +94,68 @@
     saveData(currentTab, allData[currentTab]); // 空操作（为兼容保留调用）
   }
 
+  /* ------------------- 服务端不可用提示 Banner ------------------- */
+  // 简单状态：false=隐藏，true=显示
+  function ensurePhrasesUnavailableBanner() {
+    const area = document.getElementById('phrases-area') || document.body;
+    let el = document.getElementById('phrases-unavailable');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'phrases-unavailable';
+      el.innerHTML = `
+        <span class="msg-text">服务端不可用</span>
+        <button type="button" class="retry-btn" style="margin-left:12px;padding:2px 10px;font-size:12px;cursor:pointer;border:1px solid #bbb;background:#fff;border-radius:4px;">重试</button>
+      `;
+      el.style.cssText = [
+        'display:none',
+        'color:#666',
+        'font-size:13px',
+        'padding:10px 12px',
+        'border:1px dashed #c4c4c4',
+        'border-radius:6px',
+        'background:#f7f7f7',
+        'text-align:center',
+        'margin:8px 8px 12px',
+        'user-select:none',
+        'line-height:1.4',
+        'font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif'
+      ].join(';');
+      // 插到话术区域最前
+      area.insertBefore(el, area.firstChild);
+      const retryBtn = el.querySelector('.retry-btn');
+      retryBtn.addEventListener('click', () => {
+        setPhrasesUnavailable(false);
+        // 强制重新加载当前 tab 数据
+        loadRemotePhrasesText(true);
+      });
+    }
+    return el;
+  }
+
+  function setPhrasesUnavailable(show, msg) {
+    const el = ensurePhrasesUnavailableBanner();
+    if (!el) return;
+    if (msg) {
+      const mt = el.querySelector('.msg-text');
+      if (mt) mt.textContent = msg;
+    }
+    el.style.display = show ? '' : 'none';
+  }
+
+  // 根据错误对象判断是否要显示“服务端不可用”
+  function isServerUnavailableError(err) {
+    if (!err) return true;
+    if (err.name === 'AbortError') return true;
+    if (typeof err.status === 'number') {
+      // 网络层无响应时往往没有 status，或 fetch 抛异常；若有 5xx 也认为不可用
+      if (err.status >= 500) return true;
+    }
+    const msg = (err.message || '').toLowerCase();
+    if (msg.includes('failed to fetch') || msg.includes('timeout') || msg.includes('network')) return true;
+    return false;
+  }
+  /* ------------------------------------------------------------- */
+
   function switchTab(tab) {
     if (!TAB_KEYS[tab]) return;
     currentTab = tab;
@@ -119,6 +178,8 @@
       sec.classList.toggle('active', sec.id === `tab-${tab}`);
       sec.setAttribute('aria-hidden', sec.id === `tab-${tab}` ? "false" : "true");
     });
+    // 避免残留：切换 tab 时先隐藏不可用 Banner（等请求失败再显示）
+    setPhrasesUnavailable(false);
     // 切到某个页签时，在线请求一次该页签的数据
     loadRemotePhrasesText();
   }
@@ -159,7 +220,7 @@
       setActiveCat(name);
       $$('.cat', list).forEach(b => b.classList.toggle('active', b === btn));
 
-      // 新增：懒加载当前被点击类别的内容（只在未加载过时请求一次）
+      // 懒加载当前被点击类别的内容（只在未加载过时请求一次）
       await loadCatItemsByName(name);
 
       renderList();
@@ -194,9 +255,7 @@
         if (act === 'add-cat') await addCategory();
         if (act === 'add-phrase') await addPhrase();
       }, 0);
-    }, {
-      capture: true
-    });
+    }, { capture: true });
 
     // 下拉只绑定一次（每次渲染解绑旧事件）——这里保持行为，仅判空以防错误
     document.body.addEventListener('click', closeDropdown);
@@ -210,23 +269,21 @@
   function renderList() {
     const listWrap = document.getElementById('phrase-list-' + currentTab);
     if (!listWrap) return;
-  
-    // 新增：本次渲染的序号（用于终止过期批次）
+
     const seq = ++listRenderSeq[currentTab];
-  
+
     const data = getData();
     const activeCat = getActiveCat();
     const cat = data.cats.find(c => c.name === activeCat);
     const items = cat ? cat.items : [];
-  
+
     listWrap.innerHTML = '';
     const BATCH = 120;
     let i = 0;
-  
+
     function appendBatch() {
-      // 新增：如果有更新的渲染已开始，则终止当前批次
       if (seq !== listRenderSeq[currentTab]) return;
-  
+
       const frag = document.createDocumentFragment();
       for (let n = 0; n < BATCH && i < items.length; n++, i++) {
         const t = items[i];
@@ -303,12 +360,13 @@
         return;
       }
 
-      await loadRemotePhrasesText(); // 刷新当前tab数据
+      await loadRemotePhrasesText(true); // 强制刷新当前tab数据
       setActiveCat(name);
       renderCats();
       renderList();
     } catch (e) {
       console.warn('创建类别失败：', e);
+      if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
       window.alert((e && e.message) || '创建类别失败');
     }
   }
@@ -337,22 +395,22 @@
       if (!typeId) {
         await API.content.addByMe({
           useScope,
-          title: activeCat,
-          content: text,
-          typeClass: TYPE_CLASS_TEXT,
+            title: activeCat,
+            content: text,
+            typeClass: TYPE_CLASS_TEXT,
         });
       } else {
         await API.content.addByMe({
           useScope,
-          contentTypeId: typeId,
-          content: text,
-          typeClass: TYPE_CLASS_TEXT,
+            contentTypeId: typeId,
+            content: text,
+            typeClass: TYPE_CLASS_TEXT,
         });
       }
-      await loadRemotePhrasesText(); // 刷新当前tab数据
-    
+      await loadRemotePhrasesText(true); // 强制刷新当前tab数据
     } catch (e) {
       console.warn('添加短语失败：', e);
+      if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
       window.alert((e && e.message) || '添加短语失败');
     }
   }
@@ -433,12 +491,13 @@
 
   // 之前这里会“从本地缓存重载”，现改为“直接拉远端”
   window.addEventListener('ai:saved-phrase', async () => {
-    await loadRemotePhrasesText();
+    await loadRemotePhrasesText(true);
   });
 
   // 监听登录完成事件，拉取公司/小组/私人（当前tab）
   window.addEventListener('auth:login', () => {
-    loadRemotePhrasesText();
+    setPhrasesUnavailable(false);
+    loadRemotePhrasesText(true);
     renderCats(); // 刷新按钮显隐
   });
   // 登出也刷新一次显隐（无需清数据）
@@ -447,12 +506,13 @@
   });
 
   // 登录后从后端拉取当前页签的类别与话术（typeClass=2：文字）
-  async function loadRemotePhrasesText() {
+  async function loadRemotePhrasesText(force = false) {
     const TYPE_CLASS_TEXT = 2;
     try {
-      const resp = await API.content.types({
-        typeClass: TYPE_CLASS_TEXT
-      });
+      // 开始请求前隐藏不可用提示
+      setPhrasesUnavailable(false);
+
+      const resp = await API.content.types({ typeClass: TYPE_CLASS_TEXT });
       const grouped = (resp && resp.data) || {};
 
       // 只处理当前tab的类别列表
@@ -479,9 +539,7 @@
       });
 
       // 覆盖当前tab的数据
-      allData[tabKey] = {
-        cats
-      };
+      allData[tabKey] = { cats };
 
       // 选择激活类别：优先沿用之前的；没有则选第一个
       let active = getActiveCat();
@@ -498,10 +556,18 @@
       }
 
       renderList(); // 渲染列表（此时只会有激活类别的内容）
+
+      // 若有类别成功加载，视为成功隐藏不可用提示
+      if (cats.length > 0) setPhrasesUnavailable(false);
+      else {
+        // 没有任何类别也算一种异常（可能后端返回空）——按需可提示，这里保持隐藏
+      }
     } catch (e) {
       console.warn('加载类别和话术失败：', e);
+      if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
     }
   }
+
   async function loadCatItemsByName(catName) {
     const TYPE_CLASS_TEXT = 2;
     const data = getData();
@@ -512,14 +578,22 @@
 
     const typeId = cat.id;
     if (!typeId) return;
-    const listResp = await API.content.list({
-      typeClass: TYPE_CLASS_TEXT,
-      typeId
-    });
-    const list = (listResp && listResp.data) || [];
-    cat.items = list.map(i => i.content || i.text || '').filter(Boolean);
-    cat._loaded = true;
+    try {
+      const listResp = await API.content.list({
+        typeClass: TYPE_CLASS_TEXT,
+        typeId
+      });
+      const list = (listResp && listResp.data) || [];
+      cat.items = list.map(i => i.content || i.text || '').filter(Boolean);
+      cat._loaded = true;
+      // 成功加载某个类别内容后隐藏不可用提示（可能之前失败过）
+      setPhrasesUnavailable(false);
+    } catch (e) {
+      console.warn('加载类别话术列表失败：', e);
+      if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
+    }
   }
+
   if (document.readyState === 'loading') {
     window.addEventListener('DOMContentLoaded', init);
   } else {
