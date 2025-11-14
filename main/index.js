@@ -227,6 +227,14 @@ function computeIsWechatActive() {
 function shouldFollowNow() {
   return wechatFound && isWechatActive && !userHidden && !pinnedAlwaysOnTop;
 }
+// 条件：找到微信窗口 + 当前确实在前台（即吸附/前台）
+function canSendNow() {
+  try {
+    // 即时刷新一次前台态，避免老状态误判
+    isWechatActive = computeIsWechatActive();
+  } catch {}
+  return !!(wechatFound && isWechatActive);
+}
 // 冻结时强制保持窗口位置与大小
 function applyFrozen() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -470,7 +478,7 @@ function createMainWindow() {
       click: () => mainWindow.webContents.send('menu:switch-tab', 'ai')
     },
     {
-      label: '表情',
+      label: '表情/图片',
       click: () => mainWindow.webContents.send('menu:switch-tab', 'emojis')
     },
     {
@@ -1014,6 +1022,10 @@ ipcMain.on('phrase:paste', async (_e, text) => {
 ipcMain.on('phrase:paste-send', async (_e, text) => {
   try {
     if (!text) return;
+    if (!canSendNow()) {
+          console.log('[paste-send] skipped: wechat not foreground or not docked');
+          return;
+        }
     clipboard.writeText(String(text));
     focusWeChatWindow();
     setTimeout(() => {
@@ -1032,6 +1044,102 @@ ipcMain.on('phrase:paste-send', async (_e, text) => {
   }
 });
 
+// === Emoji 图片粘贴（单击：粘贴；双击：粘贴并发送） ===
+const https = require('https');
+const http = require('http');
+const path = require('path');
+const fs = require('fs');
+
+function isRemoteImage(src) {
+  return /^https?:\/\//i.test(src);
+}
+function normalizeLocalPath(p) {
+  if (!p) return '';
+  // 去掉 file:/// 前缀
+  if (/^file:\/\//i.test(p)) {
+    return decodeURI(p.replace(/^file:\/+/, ''));
+  }
+  return p;
+}
+function downloadToBuffer(url) {
+  return new Promise((resolve, reject) => {
+    const lib = url.startsWith('https') ? https : http;
+    lib.get(url, (res) => {
+      if (res.statusCode !== 200) {
+        reject(new Error('HTTP ' + res.statusCode));
+        return;
+      }
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+    }).on('error', reject);
+  });
+}
+
+async function putImageToClipboard(src) {
+  // 返回 { type: 'image' | 'text' | 'fail' }
+  try {
+    if (isRemoteImage(src)) {
+      // 远端：下载
+      const buf = await downloadToBuffer(src);
+      const img = nativeImage.createFromBuffer(buf);
+      if (!img || (img.isEmpty && img.isEmpty())) {
+        clipboard.writeText(src);
+        return { type: 'text' };
+      }
+      clipboard.writeImage(img);
+      return { type: 'image' };
+    } else {
+      // 本地
+      const local = normalizeLocalPath(src);
+      if (!local || !fs.existsSync(local)) {
+        clipboard.writeText(src);
+        return { type: 'text' };
+      }
+      const img = nativeImage.createFromPath(local);
+      if (!img || (img.isEmpty && img.isEmpty())) {
+        clipboard.writeText(src);
+        return { type: 'text' };
+      }
+      clipboard.writeImage(img);
+      return { type: 'image' };
+    }
+  } catch (err) {
+    console.warn('putImageToClipboard fail:', err.message);
+    clipboard.writeText(src);
+    return { type: 'text' };
+  }
+}
+
+function pasteEmojiInternal(src, sendNow) {
+  if (!src) return;
+  if (!canSendNow()) {
+        console.log('[paste-send] skipped: wechat not foreground or not docked');
+        return;
+      }
+  (async () => {
+    const result = await putImageToClipboard(src);
+    focusWeChatWindow();
+    setTimeout(() => {
+      try { sendKeys.sendCtrlV(); } catch {}
+      if (sendNow) {
+        setTimeout(() => {
+          try { sendKeys.sendEnter(); } catch {}
+          if (!pinnedAlwaysOnTop) updateZOrder();
+        }, 90);
+      } else {
+        if (!pinnedAlwaysOnTop) updateZOrder();
+      }
+    }, 120);
+  })().catch(e => console.error('emoji paste error:', e));
+}
+
+ipcMain.on('emoji:paste', (_e, src) => {
+  pasteEmojiInternal(src, false);
+});
+ipcMain.on('emoji:paste-send', (_e, src) => {
+  pasteEmojiInternal(src, true);
+});
 function focusWeChatWindow() {
   try {
     let toFocus = null;

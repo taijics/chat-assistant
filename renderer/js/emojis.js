@@ -1,7 +1,5 @@
 (function() {
-  const {
-    ipcRenderer
-  } = require('electron');
+  const { ipcRenderer } = require('electron');
   const path = require('path');
   const fs = require('fs');
 
@@ -32,17 +30,20 @@
     corp: {},
     group: {},
     private: {}
-  }; // 名称->图片URL数组
+  }; // 名称->图片对象数组
   const remoteLoaded = {
     corp: {},
     group: {},
     private: {}
   };
-  // --- 自定义类别存取 ---
+  const uploadStatus = {
+    group: {},
+    private: {}
+  };
+
   function storageKey(tab) {
     return `emojis.cats.${tab}.v1`;
   }
-
   function loadCustomCats(tab) {
     try {
       let raw = localStorage.getItem(storageKey(tab));
@@ -52,79 +53,75 @@
     } catch {}
     return [];
   }
-
   function saveCustomCats(tab) {
     try {
       localStorage.setItem(storageKey(tab), JSON.stringify(customCats[tab]));
     } catch {}
   }
 
-  // --- 渲染tab栏 ---
   function renderTabBar() {
     document.querySelectorAll('.emo-tab-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tab === currentTab);
     });
-    // 显示对应panel
     document.querySelectorAll('.tabpane').forEach(pane => {
       pane.classList.toggle('active', pane.id === `emo-tab-${currentTab}`);
       pane.setAttribute('aria-hidden', pane.id !== `emo-tab-${currentTab}` ? "true" : "false");
     });
   }
 
-  // --- 渲染所有类别栏，只刷新当前tab，其它tab类别栏清空 ---
   function renderAllEmojiCatsBar() {
     ['net', 'corp', 'group', 'private'].forEach(tab => {
       const catsBar = document.getElementById(`emoji-cats-${tab}`);
+      if (!catsBar) return;
       if (tab !== currentTab) {
-        catsBar.innerHTML = ""; // 其它tab类别栏清空
+        catsBar.innerHTML = "";
         return;
       }
-      let html = '';
       if (tab === 'net') {
-        html = NET_CATEGORIES.map(cat =>
+        catsBar.innerHTML = NET_CATEGORIES.map(cat =>
           `<button class="emo-cat-btn${cat === currentCat ? ' active' : ''}" data-cat="${cat}">${cat}</button>`
         ).join('');
       } else {
-        // 用远端类别；group/private 显示“＋”
         const cats = remoteCats[tab] || [];
-        const cur = (tab === currentTab) ? currentCat : '';
+        const cur = currentCat;
         let html = cats.map(cat =>
           `<button class="emo-cat-btn${cat === cur ? ' active' : ''}" data-cat="${cat}">${cat}</button>`
         ).join('');
         if (tab === 'group' || tab === 'private') {
           html += `<button class="emo-cat-add-btn" title="添加类别">＋</button>`;
         }
-        catsBar.innerHTML = html; // 别漏了这行
+        catsBar.innerHTML = html;
       }
     });
   }
 
-  // --- 渲染所有emoji图片区，只刷新当前tab，其它tab图片区清空 ---
   function renderAllEmojiLists() {
     ['net', 'corp', 'group', 'private'].forEach(tab => {
       const grid = document.getElementById(`emoji-list-${tab}`);
+      if (!grid) return;
       if (tab !== currentTab) {
-        grid.innerHTML = ""; // 其它tab图片区清空
+        grid.innerHTML = "";
         return;
       }
       renderEmojiList(tab, currentCat);
     });
   }
 
-  // --- 渲染当前tab的emoji图片区 ---
   function renderEmojiList(tab, cat) {
     const grid = document.getElementById(`emoji-list-${tab}`);
+    if (!grid) return;
     grid.innerHTML = '';
     if (!cat) {
       grid.innerHTML = `<div style="padding:20px;color:#999;">请选择类别</div>`;
       return;
     }
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = 'repeat(auto-fill, 80px)';
+    grid.style.gap = '10px';
+    grid.style.alignContent = 'start';
+    grid.style.justifyContent = 'start';
+
     if (tab !== 'net') {
-      if (!cat) {
-        grid.innerHTML = `<div style="padding:20px;color:#999;">请选择类别</div>`;
-        return;
-      }
-      // 若未加载，则先显示“加载中”并触发加载，完成后如果仍在当前tab/类目再重绘
       if (!remoteLoaded[tab][cat]) {
         grid.innerHTML = `<div style="padding:20px;color:#999;">加载中...</div>`;
         loadRemoteItems(tab, cat).then(() => {
@@ -132,26 +129,82 @@
         });
         return;
       }
+    
       const items = remoteItems[tab][cat] || [];
-      if (!items.length) {
+      if (!items.length && !canUploadTo(tab)) {
         grid.innerHTML = `<div style="padding:20px;color:#999;">暂无表情图片</div>`;
         return;
       }
+    
       const frag = document.createDocumentFragment();
-      items.forEach(url => {
+    
+      // ==== 上传按钮放最前面 ====
+      if (canUploadTo(tab)) {
+        const uploading = uploadStatus[tab][cat] === 'uploading';
+        const add = document.createElement('div');
+        add.className = 'media-thumb';
+        add.style.cssText = 'width:80px;height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1px dashed #d0d0d0;border-radius:6px;cursor:pointer;user-select:none;font-size:24px;position:relative;';
+        add.title = uploading ? '正在上传...' : '上传图片（可多选）';
+    
+        if (uploading) {
+          add.innerHTML = `
+            <div style="font-size:12px;color:#666;display:flex;flex-direction:column;align-items:center;gap:6px;">
+              <div class="spinner" style="width:22px;height:22px;border:3px solid #ccc;border-top-color:#4aa;border-radius:50%;animation:emo-spin 0.8s linear infinite;"></div>
+              <div>上传中...</div>
+            </div>`;
+          add.style.cursor = 'not-allowed';
+        } else {
+          add.textContent = '+';
+        }
+    
+        const inp = document.createElement('input');
+        inp.type = 'file';
+        inp.accept = 'image/*';
+        inp.multiple = true;
+        inp.style.display = 'none';
+        add.appendChild(inp);
+    
+        if (!uploading) {
+          add.addEventListener('click', () => inp.click());
+          inp.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files || []);
+            if (!files.length) {
+              inp.value = '';
+              return;
+            }
+            // 标记上传中并重绘
+            uploadStatus[tab][cat] = 'uploading';
+            renderEmojiList(tab, cat);
+            handleUploadFiles(files, tab, cat);
+            inp.value = '';
+          });
+        }
+    
+        frag.appendChild(add);
+      }
+    
+      // ==== 再渲染图片 ====
+      items.forEach(obj => {
+        const url = obj.url;
         const div = document.createElement('div');
         div.className = 'media-thumb';
         div.title = "点击粘贴";
+        div.style.cssText = 'width:80px;height:80px;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:6px;';
         const img = document.createElement('img');
         img.className = 'emoji-img';
-        img.src = url; // 远端URL
-        img.dataset.path = url; // 复用 paste 逻辑
+        img.src = url;
+        img.dataset.path = url;
+        if (obj.id != null) img.dataset.id = obj.id;
+        try { img.dataset.all = JSON.stringify(obj._all || [url]); } catch {}
+        img.style.cssText = 'width:80px;height:80px;object-fit:contain;';
         div.appendChild(img);
         frag.appendChild(div);
       });
+    
       grid.appendChild(frag);
       return;
     }
+    // 本地 net
     const dir = path.join(EMOJIS_BASE, tab, cat);
     let files = [];
     try {
@@ -173,53 +226,112 @@
       const div = document.createElement('div');
       div.className = 'media-thumb';
       div.title = "点击粘贴，右键删除";
+      div.style.cssText = 'width:80px;height:80px;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:6px;';
       const img = document.createElement('img');
       img.className = 'emoji-img';
       img.src = "file:///" + file.replace(/\\/g, "/");
       img.dataset.path = file;
+      img.style.cssText = 'width:80px;height:80px;object-fit:contain;';
       div.appendChild(img);
       frag.appendChild(div);
     });
     grid.appendChild(frag);
   }
+
+  // 删除旧的提前绑定（保持空逻辑）
   ['net'].forEach(tab => {
     const grid = document.getElementById(`emoji-list-${tab}`);
     if (!grid) return;
-    // 原有 dragover / drop 逻辑保持
   });
 
-  // 右键菜单删除（仅 net）
-  ['net'].forEach(tab => {
-    document.getElementById(`emoji-list-${tab}`).oncontextmenu = function(e) {
-      e.preventDefault();
-      const img = e.target.closest('.emoji-img');
-      if (img) {
-        showContextMenu(e.pageX, e.pageY, [{
-          label: "删除",
-          click: () => deleteEmoji(img.dataset.path, tab, currentCat)
-        }]);
-      }
-    };
-  });
-  // --- 切换tab ---
+  // tab 切换
   async function switchTab(tab) {
     currentTab = tab;
-
     if (tab === 'net') {
       currentCat = NET_CATEGORIES[0];
     } else {
-      // 在线拉取类别列表（只拉本tab的列表，不拉内容）
-      await loadRemoteCats(tab);
-      // 选择激活类别：无就留空，有就选第一个
+      await loadRemoteCats(tab); // 只拉类别
       currentCat = remoteCats[tab][0] || "";
     }
-
     renderTabBar();
     renderAllEmojiCatsBar();
-    renderAllEmojiLists(); // 列表渲染时对非net会按需拉取内容
+    renderAllEmojiLists();
   }
 
-  // --- 切换类别 ---
+  function canUploadTo(tab) {
+    if (tab === 'private') return true;
+    if (tab === 'group') {
+      const u = (window.API && API.getUser && API.getUser()) || {};
+      return !!(u.isGroupLeader || u.teamLeader || u.isAdmin ||
+        (Array.isArray(u.roles) && (u.roles.includes('GROUP_LEADER') || u.roles.includes('TEAM_LEADER'))));
+    }
+    return false;
+  }
+
+  async function handleUploadFiles(files, tab, cat) {
+    if (!files || !files.length) {
+      // 没选文件也要清掉 “上传中” 状态（如果有）
+      if (uploadStatus[tab] && uploadStatus[tab][cat]) {
+        delete uploadStatus[tab][cat];
+        renderEmojiList(tab, cat);
+      }
+      return;
+    }
+    const typeId = remoteTypeIdMap[tab][cat];
+    const useScope = (tab === 'group') ? 1 : 2;
+    const urls = [];
+  
+    for (const f of files) {
+      if (!/^image\//.test(f.type)) continue;
+      try {
+        const resp = await API.files.upload(f);
+        let url = '';
+        if (typeof resp?.data === 'string') url = resp.data;
+        else if (resp?.data?.url) url = resp.data.url;
+        else if (resp?.data?.href) url = resp.data.href;
+        else if (resp?.data?.path) url = resp.data.path;
+        else if (resp?.url) url = resp.url;
+        if (url) urls.push(url);
+      } catch (err) {
+        console.warn('上传失败：', err);
+      }
+    }
+  
+    if (!urls.length) {
+      // 清除上传状态并重绘
+      if (uploadStatus[tab] && uploadStatus[tab][cat]) {
+        delete uploadStatus[tab][cat];
+        renderEmojiList(tab, cat);
+      }
+      if (window.showToast) showToast('没有有效图片', { type: 'error', duration: 1500 });
+      return;
+    }
+  
+    try {
+      for (const u of urls) {
+        await API.content.addByMe({
+          useScope,
+          contentTypeId: typeId,
+          content: u,
+          typeClass: TYPE_CLASS_EMOJI
+        });
+      }
+      // 上传成功后刷新该类别内容
+      remoteLoaded[tab][cat] = false;
+      await loadRemoteItems(tab, cat);
+      if (window.showToast) showToast('上传成功', { type: 'success' });
+    } catch (e) {
+      console.warn('addByMe 提交失败：', e);
+      if (window.showToast) showToast('上传失败', { type: 'error', duration: 1500 });
+    } finally {
+      // 清除上传状态并重绘
+      if (uploadStatus[tab] && uploadStatus[tab][cat]) {
+        delete uploadStatus[tab][cat];
+      }
+      renderEmojiList(tab, cat);
+    }
+  }
+
   async function switchCat(tab, cat) {
     currentCat = cat;
     renderAllEmojiCatsBar();
@@ -227,12 +339,10 @@
       renderAllEmojiLists();
       return;
     }
-    // 非net：懒加载该类别
     await loadRemoteItems(tab, cat);
     renderAllEmojiLists();
   }
 
-  // --- 初始化 ---
   function init() {
     ["corp", "group", "private"].forEach(tab => {
       customCats[tab] = loadCustomCats(tab);
@@ -244,16 +354,315 @@
 
   window.addEventListener('DOMContentLoaded', function() {
     init();
-    // 绑定拖拽导入事件
+    // 单击/双击粘贴与发送
     ['net', 'corp', 'group', 'private'].forEach(tab => {
       const grid = document.getElementById(`emoji-list-${tab}`);
       if (!grid) return;
-      // 允许拖拽
+      if (!grid._clickBound) {
+        let singleTimer = null;
+        grid.addEventListener('click', (e) => {
+          const img = e.target.closest('.emoji-img');
+          if (!img) return;
+          const url = img.dataset.path;
+          if (!url) return;
+          clearTimeout(singleTimer);
+          singleTimer = setTimeout(() => {
+            ipcRenderer.send('emoji:paste', url);
+            singleTimer = null;
+          }, 250);
+        });
+        grid.addEventListener('dblclick', (e) => {
+          const img = e.target.closest('.emoji-img');
+          if (!img) return;
+          const url = img.dataset.path;
+          if (!url) return;
+            if (singleTimer) {
+              clearTimeout(singleTimer);
+              singleTimer = null;
+            }
+          ipcRenderer.send('emoji:paste-send', url);
+        });
+        grid._clickBound = true;
+      }
+      if (tab === 'net') {
+        grid.oncontextmenu = function(e) {
+          e.preventDefault();
+          const img = e.target.closest('.emoji-img');
+          if (img) {
+            showContextMenu(e.pageX, e.pageY, [{
+              label: '删除',
+              click: () => deleteEmoji(img.dataset.path, tab, currentCat)
+            }]);
+          }
+        };
+      } else {
+        grid.oncontextmenu = null;
+      }
+    });
+
+    // 添加类别（group/private）——本地立即插入再异步校准
+    ['net', 'corp', 'group', 'private'].forEach(tab => {
+      const bar = document.getElementById(`emoji-cats-${tab}`);
+      if (!bar) return;
+      bar.onclick = async function(e) {
+        if (uploadStatus[currentTab] && uploadStatus[currentTab][currentCat]) {
+          showToast && showToast('正在上传，请稍候...', { type: 'info', duration: 1200 });
+          return;
+        }
+        if (e.target.classList.contains('emo-cat-btn')) {
+          switchCat(tab, e.target.dataset.cat);
+        }
+        if (e.target.classList.contains('emo-cat-add-btn')) {
+          const name = await promptCategoryName();
+          const title = (name || '').trim();
+          if (!title) return;
+          if (tab === 'group' || tab === 'private') {
+            const useScope = (tab === 'group') ? 1 : 2;
+            try {
+              const resp = await API.content.addByMe({
+                useScope,
+                title,
+                typeClass: TYPE_CLASS_EMOJI
+              });
+              if (!resp || resp.status !== 'success') {
+                alert('创建类别失败');
+                return;
+              }
+              // 解析新类别 ID（兼容不同字段）
+              const rawType = resp.data || {};
+              const newTypeId =
+                rawType.id ||
+                rawType.typeId ||
+                rawType.contentTypeId ||
+                rawType.cid ||
+                rawType.contentTypeID ||
+                null;
+
+              // 本地立即插入（如果不存在）
+              if (!remoteCats[tab].includes(title)) {
+                remoteCats[tab].push(title);
+                remoteTypeIdMap[tab][title] = newTypeId || 0;
+                remoteItems[tab][title] = [];
+                remoteLoaded[tab][title] = false;
+              } else if (newTypeId && !remoteTypeIdMap[tab][title]) {
+                remoteTypeIdMap[tab][title] = newTypeId;
+              }
+
+              currentCat = title;
+              renderAllEmojiCatsBar();
+              renderAllEmojiLists(); // 此时新类别还没有内容，显示“加载中”或空
+
+              // 延迟再拉一次远端校准（避免后端延迟导致看不到）
+              setTimeout(async () => {
+                await loadRemoteCats(tab, true); // 传递 true 以执行“保留当前激活类别”逻辑
+                // 如果当前激活类别仍在，保持并渲染；否则回退第一个
+                if (!remoteCats[tab].includes(currentCat)) {
+                  currentCat = remoteCats[tab][0] || '';
+                }
+                renderAllEmojiCatsBar();
+                renderAllEmojiLists();
+              }, 300);
+            } catch (err) {
+              console.warn('创建类别失败：', err);
+              alert('创建类别失败');
+            }
+          } else if (tab === 'net') {
+            // net 暂不支持在线添加（保留原逻辑占位）
+          }
+        }
+      };
+    });
+
+    // 类别右键（公司不弹，小组需组长，私人都弹）
+    ['corp', 'group', 'private'].forEach(tab => {
+      const bar = document.getElementById(`emoji-cats-${tab}`);
+      if (!bar) return;
+      bar.oncontextmenu = async function(e) {
+        const btn = e.target.closest('.emo-cat-btn');
+        if (!btn) return;
+        if (!canEditDeleteEmoji(tab)) return;
+        e.preventDefault();
+        const catName = btn.dataset.cat || btn.textContent.trim();
+        const typeId = remoteTypeIdMap[tab][catName];
+        if (!remoteLoaded[tab]?.[catName]) {
+          try { await loadRemoteItems(tab, catName); } catch {}
+        }
+        const count = (remoteItems[tab]?.[catName] || []).length;
+        const items = [
+          {
+            label: '编辑类别',
+            click: async () => {
+              const newTitle = await promptEditValue(catName, { title: '编辑类别名称', placeholder: '类别名称' });
+              if (!newTitle || newTitle === catName) return;
+              try {
+                const resp = await API.post('/api/front/content/updateType', { id: Number(typeId), title: newTitle });
+                if (!resp || resp.status !== 'success') {
+                  if (window.showToast) showToast(resp?.message || '修改失败', { type: 'error', duration: 1500 });
+                  return;
+                }
+                const idx = remoteCats[tab].indexOf(catName);
+                if (idx >= 0) remoteCats[tab][idx] = newTitle;
+                remoteTypeIdMap[tab][newTitle] = typeId;
+                delete remoteTypeIdMap[tab][catName];
+                remoteItems[tab][newTitle] = remoteItems[tab][catName] || [];
+                remoteLoaded[tab][newTitle] = remoteLoaded[tab][catName];
+                delete remoteItems[tab][catName];
+                delete remoteLoaded[tab][catName];
+                if (currentCat === catName && currentTab === tab) currentCat = newTitle;
+                renderAllEmojiCatsBar();
+                renderAllEmojiLists();
+                if (window.showToast) showToast('修改成功', { type: 'success' });
+              } catch (err) {
+                if (window.showToast) showToast(err.message || '修改失败', { type: 'error', duration: 1500 });
+              }
+            }
+          },
+          {
+            label: count > 0 ? '删除类别' : '删除类别',
+            click: async () => {
+              if (count > 0) {
+                if (window.showToast) showToast('该类别里面有内容，请先删除内容', { type: 'error', duration: 1500 });
+                return;
+              }
+              const ok = await uiConfirm({ title: '删除类别', message: `确定删除类别【${catName}】吗？（不可恢复）`, okText: '删除', danger: true });
+              if (!ok) return;
+              try {
+                const resp = await API.post('/api/front/content/delType', { id: Number(typeId) });
+                if (!resp || resp.status !== 'success') {
+                  if (window.showToast) showToast(resp?.message || '删除失败', { type: 'error', duration: 1500 });
+                  return;
+                }
+                remoteCats[tab] = remoteCats[tab].filter(n => n !== catName);
+                delete remoteTypeIdMap[tab][catName];
+                delete remoteItems[tab][catName];
+                delete remoteLoaded[tab][catName];
+                if (currentTab === tab && currentCat === catName) {
+                  currentCat = (remoteCats[tab] || [])[0] || '';
+                }
+                renderAllEmojiCatsBar();
+                renderAllEmojiLists();
+                if (window.showToast) showToast('删除成功', { type: 'success' });
+              } catch (err) {
+                if (window.showToast) showToast(err.message || '删除失败', { type: 'error', duration: 1500 });
+              }
+            }
+          }
+        ];
+        showContextMenu(e.pageX, e.pageY, items);
+      };
+    });
+
+    // 远端图片右键菜单（公司不弹，小组需组长，私人都弹）
+    ['corp', 'group', 'private'].forEach(tab => {
+      const grid = document.getElementById(`emoji-list-${tab}`);
+      if (!grid) return;
+      if (!canEditDeleteEmoji(tab)) return;
+      grid.oncontextmenu = async function(e) {
+        const img = e.target.closest('.emoji-img');
+        if (!img) return;
+        e.preventDefault();
+        const url = img.dataset.path || '';
+        const cid = img.dataset.id ? Number(img.dataset.id) : null;
+        let all = [];
+        try { all = JSON.parse(img.dataset.all || '[]'); } catch {}
+        const items = [
+          {
+            label: '编辑',
+            click: async () => {
+              const inp = document.createElement('input');
+              inp.type = 'file';
+              inp.accept = 'image/*';
+              inp.style.display = 'none';
+              document.body.appendChild(inp);
+              inp.onchange = async (ev) => {
+                const file = ev.target.files && ev.target.files[0];
+                if (!file) { inp.remove(); return; }
+                try {
+                  const up = await API.files.upload(file);
+                  let newUrl = '';
+                  if (typeof up?.data === 'string') newUrl = up.data;
+                  else if (up?.data?.url) newUrl = up.data.url;
+                  else if (up?.data?.href) newUrl = up.data.href;
+                  else if (up?.data?.path) newUrl = up.data.path;
+                  else if (up?.url) newUrl = up.url;
+                  if (!newUrl) {
+                    showToast('上传失败：未返回URL', { type: 'error', duration: 1500 });
+                    inp.remove();
+                    return;
+                  }
+                  const nextArr = (all && all.length ? all.map(u => u === url ? newUrl : u) : [newUrl]);
+                  const next = nextArr.join(',');
+                  if (!cid) throw new Error('缺少内容ID，无法编辑');
+                  const resp = await API.post('/api/front/content/updateContent', { id: cid, img: next, content: next });
+                  if (!resp || resp.status !== 'success') {
+                    showToast(resp?.message || '修改失败', { type: 'error', duration: 1500 });
+                    inp.remove();
+                    return;
+                  }
+                  const arr = remoteItems[tab][currentCat] || [];
+                  const it = arr.find(o => String(o.id) === String(cid) && o.url === url);
+                  if (it) {
+                    it.url = newUrl;
+                    it._all = nextArr;
+                  }
+                  img.dataset.path = newUrl;
+                  img.src = newUrl;
+                  img.dataset.all = JSON.stringify(nextArr);
+                  showToast('修改成功', { type: 'success' });
+                } catch (err) {
+                  showToast(err.message || '上传失败', { type: 'error', duration: 1500 });
+                } finally {
+                  inp.remove();
+                }
+              };
+              inp.click();
+            }
+          },
+            {
+              label: '删除',
+              click: async () => {
+                if (!cid) { showToast('缺少内容ID，无法删除', { type: 'error', duration: 1500 }); return; }
+                const ok = await uiConfirm({ title: '删除图片', message: '确定删除该图片吗？（不可恢复）', okText: '删除', danger: true });
+                if (!ok) return;
+                const remains = (all || []).filter(u => u !== url);
+                try {
+                  if (remains.length > 0) {
+                    const resp = await API.post('/api/front/content/updateContent', { id: cid, img: remains.join(','), content: remains.join(',') });
+                    if (!resp || resp.status !== 'success') {
+                      showToast(resp?.message || '删除失败', { type: 'error', duration: 1500 });
+                      return;
+                    }
+                  } else {
+                    const resp = await API.post('/api/front/content/delContent', { id: cid });
+                    if (!resp || resp.status !== 'success') {
+                      showToast(resp?.message || '删除失败', { type: 'error', duration: 1500 });
+                      return;
+                    }
+                  }
+                  const arr = remoteItems[tab][currentCat] || [];
+                  const idx = arr.findIndex(o => String(o.id) === String(cid) && o.url === url);
+                  if (idx >= 0) arr.splice(idx, 1);
+                  renderEmojiList(tab, currentCat);
+                  showToast('删除成功', { type: 'success' });
+                } catch (err) {
+                  showToast(err.message || '删除失败', { type: 'error', duration: 1500 });
+                }
+              }
+            }
+        ];
+        showContextMenu(e.pageX, e.pageY, items);
+      };
+    });
+
+    // 绑定拖拽导入
+    ['net', 'corp', 'group', 'private'].forEach(tab => {
+      const grid = document.getElementById(`emoji-list-${tab}`);
+      if (!grid) return;
       grid.ondragover = function(e) {
         e.preventDefault();
         grid.classList.add('dragover');
       };
-      grid.ondragleave = function(e) {
+      grid.ondragleave = function() {
         grid.classList.remove('dragover');
       };
       grid.ondrop = function(e) {
@@ -261,29 +670,22 @@
         grid.classList.remove('dragover');
         const files = Array.from(e.dataTransfer.files);
         if (!files.length) return;
-        // 只处理图片类型
         files.forEach(file => {
           if (!/^image\//.test(file.type)) return;
           const reader = new FileReader();
           reader.onload = function(evt) {
             const buffer = Buffer.from(evt.target.result);
-            const ext = file.name.split('.').pop().toLowerCase();
-            // 目标目录
             const dir = path.join("D:/emojis", tab, currentCat || "默认");
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, {
-              recursive: true
-            });
-            // 文件名：时间戳+原名
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
             const filename = `${Date.now()}_${file.name}`;
             fs.writeFileSync(path.join(dir, filename), buffer);
-            // 刷新表情区
             renderEmojiList(tab, currentCat);
           };
           reader.readAsArrayBuffer(file);
         });
       };
     });
-    // tab切换
+
     document.getElementById('emo-tabbar').onclick = async function(e) {
       const btn = e.target.closest('.emo-tab-btn');
       if (btn) {
@@ -293,70 +695,69 @@
         }
       }
     };
-
-    // 类别栏点击
-    ['net', 'corp', 'group', 'private'].forEach(tab => {
-      document.getElementById(`emoji-cats-${tab}`).onclick = async function(e) {
-        if (e.target.classList.contains('emo-cat-btn')) {
-          switchCat(tab, e.target.dataset.cat);
-        }
-        if (e.target.classList.contains('emo-cat-add-btn')) {
-          const name = await promptCategoryName();
-          const title = (name || '').trim();
-          if (!title) return;
-
-          if (tab === 'group' || tab === 'private') {
-            const useScope = (tab === 'group') ? 1 : 2; // 小组=1，私人=2
-            try {
-              const resp = await API.content.addByMe({
-                useScope,
-                title,
-                typeClass: TYPE_CLASS_EMOJI // 1 = 表情
-              });
-              if (!resp || resp.status !== 'success') {
-                alert('创建类别失败');
-                return;
-              }
-              // 重新拉取该tab的类别列表，并选中新建的类别
-              await loadRemoteCats(tab);
-              currentCat = title;
-              renderAllEmojiCatsBar();
-              renderAllEmojiLists(); // 首次渲染时会懒加载当前类别内容
-            } catch (err) {
-              console.warn('创建类别失败：', err);
-              alert('创建类别失败');
-            }
-          } else if (tab === 'net') {
-            // 保留 net 的本地创建逻辑（若以后需要）
-            // ...（不做改动）
-          }
-        }
-      };
-    });
-
-    // 图片点击（粘贴）
-    ['net', 'corp', 'group', 'private'].forEach(tab => {
-      document.getElementById(`emoji-list-${tab}`).onclick = function(e) {
-        const img = e.target.closest('.emoji-img');
-        if (img) {
-          ipcRenderer.send('emoji:paste', img.dataset.path);
-        }
-      };
-      // 右键菜单删除
-      document.getElementById(`emoji-list-${tab}`).oncontextmenu = function(e) {
-        e.preventDefault();
-        const img = e.target.closest('.emoji-img');
-        if (img) {
-          showContextMenu(e.pageX, e.pageY, [{
-            label: "删除",
-            click: () => deleteEmoji(img.dataset.path, tab, currentCat)
-          }]);
-        }
-      };
-    });
   });
 
-  // --- 删除表情图片 ---
+  async function loadRemoteCats(tab, preserveActive = false) {
+    const prevActive = preserveActive ? currentCat : '';
+    const resp = await API.content.types({ typeClass: TYPE_CLASS_EMOJI });
+    const grouped = (resp && resp.data) || {};
+    let typesArr = [];
+    if (tab === 'corp') typesArr = grouped.company || grouped.corp || grouped['公司'] || [];
+    else if (tab === 'group') typesArr = grouped.team || grouped.group || grouped['小组'] || [];
+    else if (tab === 'private') typesArr = grouped.personal || grouped.private || grouped['私人'] || [];
+
+    remoteCats[tab] = [];
+    remoteTypeIdMap[tab] = {};
+    remoteItems[tab] = {};
+    remoteLoaded[tab] = {};
+
+    (typesArr || []).forEach(t => {
+      const typeId = t.id || t.typeId || t.contentTypeId;
+      const title = t.title || t.name || ('分类-' + (typeId ?? ''));
+      if (!typeId || !title) return;
+      remoteCats[tab].push(title);
+      remoteTypeIdMap[tab][title] = typeId;
+      remoteItems[tab][title] = [];
+      remoteLoaded[tab][title] = false;
+    });
+
+    // 如果保留激活且远端暂未返回，尝试合并本地临时类别
+    if (prevActive && !remoteCats[tab].includes(prevActive)) {
+      remoteCats[tab].push(prevActive);
+      if (!remoteTypeIdMap[tab][prevActive]) {
+        remoteTypeIdMap[tab][prevActive] = 0; // 占位
+      }
+      if (!remoteItems[tab][prevActive]) remoteItems[tab][prevActive] = [];
+      if (remoteLoaded[tab][prevActive] == null) remoteLoaded[tab][prevActive] = false;
+    }
+  }
+
+  async function loadRemoteItems(tab, cat) {
+    if (!cat || remoteLoaded[tab][cat]) return;
+    const typeId = remoteTypeIdMap[tab][cat];
+    if (!typeId) {
+      remoteLoaded[tab][cat] = true;
+      return;
+    }
+    const listResp = await API.content.list({ typeClass: TYPE_CLASS_EMOJI, typeId });
+    const list = (listResp && listResp.data) || [];
+    const items = [];
+    list.forEach(i => {
+      const cid = i?.id || i?.contentId || i?.cid;
+      let parts = [];
+      if (i && typeof i.img === 'string' && i.img) {
+        parts = i.img.split(',').map(s => s.trim()).filter(Boolean);
+      } else if (i?.url) {
+        parts = [i.url];
+      } else if (i?.content) {
+        parts = String(i.content).split(',').map(s => s.trim()).filter(Boolean);
+      }
+      parts.forEach(u => items.push({ id: cid, url: u, _all: parts.slice() }));
+    });
+    remoteItems[tab][cat] = items;
+    remoteLoaded[tab][cat] = true;
+  }
+
   function deleteEmoji(filePath, tab, cat) {
     if (!filePath) return;
     if (confirm("确定要删除此表情图片吗？")) {
@@ -369,7 +770,6 @@
     }
   }
 
-  // --- 弹出类别添加输入 ---
   function promptCategoryName() {
     return new Promise(resolve => {
       const mask = document.createElement('div');
@@ -384,17 +784,14 @@
           <button class="btn-cancel" type="button">取消</button>
           <button class="btn-ok" type="button">确定</button>
         </div>
-      </div>
-    `;
+      </div>`;
       document.body.appendChild(mask);
       const dialog = mask.querySelector('.prompt-dialog');
       const input = mask.querySelector('.prompt-input');
       const btnOk = mask.querySelector('.btn-ok');
       const btnCancel = mask.querySelector('.btn-cancel');
       input.value = '';
-      setTimeout(() => {
-        input.focus();
-      }, 0);
+      setTimeout(() => { input.focus(); }, 0);
       const close = (val) => {
         if (mask && mask.parentNode) mask.parentNode.removeChild(mask);
         resolve(val);
@@ -415,77 +812,10 @@
           btnCancel.click();
         }
       });
-      input.addEventListener('keydown', (e) => {
-        e.stopPropagation();
-      });
-    });
-  }
-  // 拉取当前tab的类别列表（不拉内容）
-  async function loadRemoteCats(tab) {
-    const resp = await API.content.types({
-      typeClass: TYPE_CLASS_EMOJI
-    });
-    const grouped = (resp && resp.data) || {};
-
-    let typesArr = [];
-    if (tab === 'corp') typesArr = grouped.company || grouped.corp || grouped['公司'] || [];
-    else if (tab === 'group') typesArr = grouped.team || grouped.group || grouped['小组'] || [];
-    else if (tab === 'private') typesArr = grouped.personal || grouped.private || grouped['私人'] || [];
-
-    remoteCats[tab] = [];
-    remoteTypeIdMap[tab] = {};
-    remoteItems[tab] = {};
-    remoteLoaded[tab] = {};
-
-    (typesArr || []).forEach(t => {
-      const typeId = t.id || t.typeId || t.contentTypeId;
-      const title = t.title || t.name || ('分类-' + (typeId ?? ''));
-      if (!typeId || !title) return;
-      remoteCats[tab].push(title);
-      remoteTypeIdMap[tab][title] = typeId;
-      remoteItems[tab][title] = [];
-      remoteLoaded[tab][title] = false;
+      input.addEventListener('keydown', (e) => { e.stopPropagation(); });
     });
   }
 
-  // 按需拉取某个类别下的图片列表
-  async function loadRemoteItems(tab, cat) {
-    if (!cat || remoteLoaded[tab][cat]) return;
-    const typeId = remoteTypeIdMap[tab][cat];
-    if (!typeId) {
-      remoteLoaded[tab][cat] = true;
-      return;
-    }
-    const listResp = await API.content.list({
-      typeClass: TYPE_CLASS_EMOJI,
-      typeId
-    });
-    const list = (listResp && listResp.data) || [];
-    // 这里假定后端 content 字段就是图片URL
-    remoteItems[tab][cat] = list.map(i => i.url || i.content || '').filter(Boolean);
-    remoteLoaded[tab][cat] = true;
-  }
-
-  function renderEmojiCatsBar(tab) {
-    const catsList = document.getElementById(`emoji-cats-list-${tab}`);
-    const catsOps = document.getElementById(`emoji-cats-ops-${tab}`);
-    let html = '';
-    if (tab === 'net') {
-      html = NET_CATEGORIES.map(cat =>
-        `<button class="emo-cat-btn${cat === currentCat ? ' active' : ''}" data-cat="${cat}">${cat}</button>`
-      ).join('');
-      catsList.innerHTML = html;
-      catsOps.style.display = 'none';
-    } else {
-      const cats = customCats[tab] || [];
-      html = cats.map(cat =>
-        `<button class="emo-cat-btn${cat === currentCat ? ' active' : ''}" data-cat="${cat}">${cat}</button>`
-      ).join('');
-      catsList.innerHTML = html;
-      catsOps.style.display = '';
-    }
-  }
-  // --- 右键菜单 ---
   function showContextMenu(x, y, items) {
     let m = document.getElementById('emo-context-menu');
     if (m) m.remove();
@@ -507,8 +837,64 @@
       if (items[idx] && typeof items[idx].click === 'function') items[idx].click();
       m.remove();
     };
-    document.addEventListener('click', () => m.remove(), {
-      once: true
+    document.addEventListener('click', () => m.remove(), { once: true });
+  }
+
+  function currentUserIsAdmin() {
+    try {
+      const u = (window.API && API.getUser && API.getUser()) || {};
+      return Number(u.isAdmin) === 1;
+    } catch {
+      return false;
+    }
+  }
+
+  function canEditDeleteEmoji(tab) {
+    if (tab === 'corp') return false;
+    if (tab === 'group') return canUploadTo('group');
+    if (tab === 'private') return true;
+    return false;
+  }
+
+  function promptEditValue(initial = '', { title = '编辑', placeholder = '' } = {}) {
+    return new Promise(resolve => {
+      const mask = document.createElement('div');
+      mask.className = 'prompt-mask';
+      mask.innerHTML = `
+        <div class="prompt-dialog" role="dialog" aria-modal="true" style="width:420px;max-width:90vw;">
+          <div class="prompt-title" style="font-size:15px;margin-bottom:10px;">${title}</div>
+          <div class="prompt-body">
+            <input class="prompt-input" type="text" placeholder="${placeholder}" style="width:100%;box-sizing:border-box;line-height:1.5;padding:8px 10px;border:1px solid #ddd;border-radius:6px;">
+          </div>
+          <div class="prompt-actions" style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px;">
+            <button class="btn-cancel" type="button">取消</button>
+            <button class="btn-ok" type="button" disabled style="opacity:.5;cursor:not-allowed;">确定</button>
+          </div>
+        </div>`;
+      document.body.appendChild(mask);
+      const dialog = mask.querySelector('.prompt-dialog');
+      const input = mask.querySelector('.prompt-input');
+      const btnOk = mask.querySelector('.btn-ok');
+      const btnCancel = mask.querySelector('.btn-cancel');
+      input.value = initial || '';
+      setTimeout(() => input.focus(), 0);
+      const update = () => {
+        const changed = input.value.trim() !== String(initial || '').trim();
+        btnOk.disabled = !changed;
+        btnOk.style.opacity = changed ? '1' : '.5';
+        btnOk.style.cursor = changed ? 'pointer' : 'not-allowed';
+      };
+      input.addEventListener('input', update);
+      update();
+      const close = (val) => { mask.remove(); resolve(val); };
+      btnCancel.onclick = () => close(null);
+      btnOk.onclick = () => { if (!btnOk.disabled) close(input.value.trim()); };
+      mask.addEventListener('click', e => { if (e.target === mask) close(null); });
+      dialog.addEventListener('click', e => e.stopPropagation());
+      mask.addEventListener('keydown', e => {
+        if (e.key === 'Escape') close(null);
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !btnOk.disabled) btnOk.click();
+      });
     });
   }
 })();

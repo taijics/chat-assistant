@@ -106,6 +106,7 @@
   align-items: flex-end;
   justify-content: flex-start;
   height: 25px;
+  margin-bottom:14px;
 }
 
 .ai-agent-selected-btn {
@@ -129,8 +130,8 @@
 
 .ai-agent-dropdown {
   position: absolute;
-  left: 18px;
-  bottom: 68px;
+  left: 4px;
+  bottom: 42px;
   background: #fff;
   border-radius: 14px;
   box-shadow: 0 4px 24px #0003;

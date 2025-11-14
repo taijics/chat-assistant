@@ -28,6 +28,10 @@
         background: transparent;
         /* 保持不可见 */
       }
+      @keyframes emo-spin {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+      }
     </style>
     <link rel="stylesheet" href="./css/header.css">
     <link rel="stylesheet" href="./css/phrases.css">
@@ -37,12 +41,6 @@
     <link rel="stylesheet" href="./css/aimodels.css">
   </head>
   <body>
-
-
-
-
-
-
     <!-- Tabs content -->
     <div id="phrases-area" class="padding10">
       <div class="tabbar" id="tabbar" role="tablist" aria-label="话术类别">
@@ -222,12 +220,12 @@
 
     <!-- 右侧缩放条（不可见，仅用于命中拖动） -->
     <div id="edge-resizer-right" aria-hidden="true"></div>
-
+   <script src="./js/header.js"></script>
     <script src="./js/tabs.js"></script>
     <script src="./js/phrases.js"></script>
     <script src="./js/ai.js"></script>
     <script src="./js/aimodels.js"></script>
-    <script src="./js/header.js"></script>
+ 
     <script src="./js/menu.js"></script>
     <script src="./js/resize.js"></script>
     <script src="./js/ai-dragdrop.js"></script>

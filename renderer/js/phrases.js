@@ -1,5 +1,7 @@
 (function() {
-  const { ipcRenderer } = require('electron');
+  const {
+    ipcRenderer
+  } = require('electron');
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
@@ -49,18 +51,20 @@
   }
 
   // 不再读取 localStorage，直接返回空结构
-  function loadData(/* tab */) {
-    return { cats: [] };
+  function loadData( /* tab */ ) {
+    return {
+      cats: []
+    };
   }
   // 不再写入 localStorage（改为空操作）
-  function saveData(/* tab, data */) {}
+  function saveData( /* tab, data */ ) {}
 
   // 不再读取 localStorage，默认返回数据中的第一个类目名或空
   function loadActiveCat(tab, data) {
     return data && Array.isArray(data.cats) && data.cats.length ? data.cats[0].name : '';
   }
   // 不再写入 localStorage（改为空操作）
-  function saveActiveCat(/* tab, name */) {}
+  function saveActiveCat( /* tab, name */ ) {}
 
   // 初始化为纯内存数据
   let allData = {
@@ -73,7 +77,11 @@
     group: loadActiveCat('group', allData.group),
     private: loadActiveCat('private', allData.private)
   };
-  let listRenderSeq = { corp: 0, group: 0, private: 0 };
+  let listRenderSeq = {
+    corp: 0,
+    group: 0,
+    private: 0
+  };
 
   function getData() {
     return allData[currentTab];
@@ -94,35 +102,51 @@
     saveData(currentTab, allData[currentTab]); // 空操作（为兼容保留调用）
   }
 
-  /* ------------------- 服务端不可用提示 Banner ------------------- */
-  // 简单状态：false=隐藏，true=显示
+  /* ------------------- 服务端不可用提示 Banner（居中显示） ------------------- */
+  // 放到主页面正中（覆盖居中），只在话术模块触发时显示
   function ensurePhrasesUnavailableBanner() {
-    const area = document.getElementById('phrases-area') || document.body;
     let el = document.getElementById('phrases-unavailable');
     if (!el) {
       el = document.createElement('div');
       el.id = 'phrases-unavailable';
-      el.innerHTML = `
-        <span class="msg-text">服务端不可用</span>
-        <button type="button" class="retry-btn" style="margin-left:12px;padding:2px 10px;font-size:12px;cursor:pointer;border:1px solid #bbb;background:#fff;border-radius:4px;">重试</button>
-      `;
+      // 全屏覆盖，居中摆放
       el.style.cssText = [
+        'position:fixed',
+        'inset:0',
         'display:none',
-        'color:#666',
-        'font-size:13px',
-        'padding:10px 12px',
-        'border:1px dashed #c4c4c4',
-        'border-radius:6px',
-        'background:#f7f7f7',
-        'text-align:center',
-        'margin:8px 8px 12px',
-        'user-select:none',
-        'line-height:1.4',
-        'font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif'
+        'z-index:2147483000',
+        'pointer-events:none',
+        'display:flex',
+        'align-items:center',
+        'justify-content:center'
       ].join(';');
-      // 插到话术区域最前
-      area.insertBefore(el, area.firstChild);
-      const retryBtn = el.querySelector('.retry-btn');
+
+      // 内层卡片
+      const card = document.createElement('div');
+      card.style.cssText = [
+        'pointer-events:auto',
+        'background:#fff',
+        'color:#333',
+        'border:1px solid #ddd',
+        'box-shadow:0 8px 28px rgba(0,0,0,.15)',
+        'border-radius:10px',
+        'padding:16px 20px',
+        'font-size:14px',
+        'line-height:1.6',
+        'max-width:80vw',
+        'text-align:center'
+      ].join(';');
+      card.innerHTML = `
+        <span class="msg-text" style="color:#444;">服务端不可用</span>
+        <button type="button" class="retry-btn"
+          style="margin-left:14px;padding:6px 14px;font-size:13px;cursor:pointer;border:1px solid #bbb;background:#fff;border-radius:6px;">
+          重试
+        </button>
+      `;
+      el.appendChild(card);
+      document.body.appendChild(el);
+
+      const retryBtn = card.querySelector('.retry-btn');
       retryBtn.addEventListener('click', () => {
         setPhrasesUnavailable(false);
         // 强制重新加载当前 tab 数据
@@ -139,7 +163,7 @@
       const mt = el.querySelector('.msg-text');
       if (mt) mt.textContent = msg;
     }
-    el.style.display = show ? '' : 'none';
+    el.style.display = show ? 'flex' : 'none';
   }
 
   // 根据错误对象判断是否要显示“服务端不可用”
@@ -147,7 +171,6 @@
     if (!err) return true;
     if (err.name === 'AbortError') return true;
     if (typeof err.status === 'number') {
-      // 网络层无响应时往往没有 status，或 fetch 抛异常；若有 5xx 也认为不可用
       if (err.status >= 500) return true;
     }
     const msg = (err.message || '').toLowerCase();
@@ -191,7 +214,7 @@
     const data = getData();
     const activeCat = getActiveCat();
     const catsHtml = data.cats.map(c =>
-      `<button class="cat ${c.name === activeCat ? 'active' : ''}" data-cat="${c.name}">${c.name}</button>`
+      `<button class="cat ${c.name === activeCat ? 'active' : ''}" data-id="${c.id}" data-cat="${c.name}" data-count="${c.items.length}">${c.name}</button>`
     ).join('');
     const showOps = canShowOps(currentTab);
     const opsHtml = showOps ? `
@@ -255,7 +278,9 @@
         if (act === 'add-cat') await addCategory();
         if (act === 'add-phrase') await addPhrase();
       }, 0);
-    }, { capture: true });
+    }, {
+      capture: true
+    });
 
     // 下拉只绑定一次（每次渲染解绑旧事件）——这里保持行为，仅判空以防错误
     document.body.addEventListener('click', closeDropdown);
@@ -286,19 +311,16 @@
 
       const frag = document.createDocumentFragment();
       for (let n = 0; n < BATCH && i < items.length; n++, i++) {
-        const t = items[i];
+        const t = items[i]; // 现在的 t 是 { id, text }
         const el = document.createElement('div');
         el.className = 'phrase-item';
-        el.setAttribute('data-text', String(t).replace(/"/g, '&quot;'));
-        el.title = '单击：粘贴到微信；双击：粘贴并发送';
+        el.dataset.text = String(t.text).replace(/"/g, '&quot;');
+        if (t.id) el.dataset.id = t.id;
+        el.title = '单击：粘贴；双击：粘贴并发送；右键：操作';
         const textDiv = document.createElement('div');
         textDiv.className = 'text';
-        textDiv.textContent = t;
-        const metaDiv = document.createElement('div');
-        metaDiv.className = 'meta';
-        metaDiv.textContent = activeCat;
+        textDiv.textContent = t.text;
         el.appendChild(textDiv);
-        // el.appendChild(metaDiv);
         frag.appendChild(el);
       }
       listWrap.appendChild(frag);
@@ -360,10 +382,46 @@
         return;
       }
 
-      await loadRemotePhrasesText(true); // 强制刷新当前tab数据
+      // 1. 解析新类别 ID（兼容多种返回结构）
+      const rawType = resp.data || {};
+      const newTypeId =
+        rawType.id ||
+        rawType.typeId ||
+        rawType.contentTypeId ||
+        rawType.cid ||
+        rawType.contentTypeID ||
+        null;
+
+      // 2. 本地立即插入（若不存在）
+      const catsArr = allData[currentTab].cats;
+      const existed = catsArr.find(c => c.name === name);
+      if (!existed) {
+        catsArr.push({
+          name,
+          id: newTypeId || 0, // 可能后端没直接返回 id，先占位 0
+          items: [],
+          _loaded: false
+        });
+      } else if (existed && newTypeId && !existed.id) {
+        // 补 ID
+        existed.id = newTypeId;
+      }
+
+      // 3. 更新映射
+      if (newTypeId) {
+        allTypeIdMap[currentTab][name] = newTypeId;
+      }
+
+      // 4. 激活 + 立即渲染
       setActiveCat(name);
       renderCats();
       renderList();
+
+      // 5. 异步重新拉远端（让后端写入完成后校准；不影响已看到的新类别）
+      setTimeout(() => {
+        loadRemotePhrasesText(true);
+      }, 300);
+
     } catch (e) {
       console.warn('创建类别失败：', e);
       if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
@@ -395,16 +453,16 @@
       if (!typeId) {
         await API.content.addByMe({
           useScope,
-            title: activeCat,
-            content: text,
-            typeClass: TYPE_CLASS_TEXT,
+          title: activeCat,
+          content: text,
+          typeClass: TYPE_CLASS_TEXT,
         });
       } else {
         await API.content.addByMe({
           useScope,
-            contentTypeId: typeId,
-            content: text,
-            typeClass: TYPE_CLASS_TEXT,
+          contentTypeId: typeId,
+          content: text,
+          typeClass: TYPE_CLASS_TEXT,
         });
       }
       await loadRemotePhrasesText(true); // 强制刷新当前tab数据
@@ -478,6 +536,32 @@
     if (!tab || tab === currentTab) return;
     switchTab(tab);
   });
+  // 右键菜单通用创建函数（添加到文件靠后位置，init 之前即可）
+  function showContextMenu(x, y, items) {
+    let m = document.getElementById('phrases-context-menu');
+    if (m) m.remove();
+    m = document.createElement('div');
+    m.id = 'phrases-context-menu';
+    m.style.cssText =
+      'position:fixed;z-index:3000;min-width:120px;background:#fff;border:1px solid #ccc;box-shadow:0 4px 16px rgba(0,0,0,.15);';
+    m.style.left = x + 'px';
+    m.style.top = y + 'px';
+    m.innerHTML = items.map(it =>
+      `<div class="ctx-item" data-act="${it.act}" style="padding:6px 12px;cursor:pointer;font-size:13px;white-space:nowrap;">${it.label}</div>`
+    ).join('');
+    document.body.appendChild(m);
+    m.addEventListener('click', e => {
+      const item = e.target.closest('.ctx-item');
+      if (!item) return;
+      const act = item.dataset.act;
+      const def = items.find(i => i.act === act);
+      if (def && typeof def.onClick === 'function') def.onClick();
+      m.remove();
+    });
+    document.addEventListener('click', () => m.remove(), {
+      once: true
+    });
+  }
 
   function init() {
     // 显示公司tab
@@ -487,8 +571,59 @@
       const tk = (window.API && API.getToken && API.getToken()) || '';
       if (tk) loadRemotePhrasesText();
     } catch {}
+    bindContextMenus();
   }
+  // 编辑弹框（带禁用确定逻辑）
+  async function uiEditPrompt(initial, title) {
+    const mask = document.createElement('div');
+    mask.className = 'prompt-mask';
+    mask.innerHTML = `
+  <div class="prompt-dialog" role="dialog" aria-modal="true" style="width:420px;max-width:90vw;">
+    <div class="prompt-title" style="font-size:15px;margin-bottom:10px;">${title || '编辑'}</div>
+    <div class="prompt-body">
+      <textarea class="prompt-input" rows="6" style="width:100%;box-sizing:border-box;line-height:1.5;"></textarea>
+    </div>
+    <div class="prompt-actions" style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn-cancel" type="button">取消</button>
+      <button class="btn-ok" type="button" disabled style="opacity:.5;cursor:not-allowed;">确定</button>
+    </div>
+  </div>`;
+    document.body.appendChild(mask);
+    const dialog = mask.querySelector('.prompt-dialog');
+    const input = mask.querySelector('.prompt-input');
+    const btnOk = mask.querySelector('.btn-ok');
+    const btnCancel = mask.querySelector('.btn-cancel');
+    input.value = initial || '';
+    input.focus();
 
+    function updateState() {
+      const changed = input.value.trim() !== (initial || '').trim();
+      btnOk.disabled = !changed;
+      btnOk.style.opacity = changed ? '1' : '.5';
+      btnOk.style.cursor = changed ? 'pointer' : 'not-allowed';
+    }
+    input.addEventListener('input', updateState);
+    updateState();
+    return new Promise(resolve => {
+      function close(val) {
+        mask.remove();
+        resolve(val);
+      }
+      btnCancel.onclick = () => close(null);
+      btnOk.onclick = () => {
+        if (btnOk.disabled) return;
+        close(input.value.trim());
+      };
+      mask.addEventListener('click', e => {
+        if (e.target === mask) close(null);
+      });
+      dialog.addEventListener('click', e => e.stopPropagation());
+      mask.addEventListener('keydown', e => {
+        if (e.key === 'Escape') close(null);
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !btnOk.disabled) btnOk.click();
+      });
+    });
+  }
   // 之前这里会“从本地缓存重载”，现改为“直接拉远端”
   window.addEventListener('ai:saved-phrase', async () => {
     await loadRemotePhrasesText(true);
@@ -505,68 +640,66 @@
     renderCats();
   });
 
+  // 当切换顶部主区域到非“话术”时，隐藏提示
+  ipcRenderer.on('menu:switch-tab', (_e, tabName) => {
+    if (tabName !== 'phrases') setPhrasesUnavailable(false);
+  });
+
   // 登录后从后端拉取当前页签的类别与话术（typeClass=2：文字）
-  async function loadRemotePhrasesText(force = false) {
-    const TYPE_CLASS_TEXT = 2;
-    try {
-      // 开始请求前隐藏不可用提示
-      setPhrasesUnavailable(false);
-
-      const resp = await API.content.types({ typeClass: TYPE_CLASS_TEXT });
-      const grouped = (resp && resp.data) || {};
-
-      // 只处理当前tab的类别列表
-      let typesArr = [];
-      const tabKey = currentTab;
-      if (tabKey === 'corp') typesArr = grouped.company || grouped.corp || grouped['公司'] || [];
-      else if (tabKey === 'group') typesArr = grouped.team || grouped.group || grouped['小组'] || [];
-      else if (tabKey === 'private') typesArr = grouped.personal || grouped.private || grouped['私人'] || [];
-
-      // 重置映射和本tab的类别（先不请求内容）
-      allTypeIdMap[tabKey] = {};
-      const cats = [];
-      (typesArr || []).forEach((t) => {
-        const typeId = t.id || t.typeId || t.contentTypeId;
-        const title = t.title || t.name || ('分类-' + (typeId ?? ''));
-        if (!typeId) return;
-        cats.push({
-          name: title,
-          id: typeId,
-          items: [],
-          _loaded: false
-        }); // 标记未加载
-        allTypeIdMap[tabKey][title] = typeId;
-      });
-
-      // 覆盖当前tab的数据
-      allData[tabKey] = { cats };
-
-      // 选择激活类别：优先沿用之前的；没有则选第一个
-      let active = getActiveCat();
-      if (!active || !cats.find(c => c.name === active)) {
-        active = cats[0]?.name || '';
-        if (active) setActiveCat(active);
-      }
-
-      renderCats(); // 先渲染类别按钮
-
-      // 只为“激活类别”请求内容
-      if (active) {
-        await loadCatItemsByName(active);
-      }
-
-      renderList(); // 渲染列表（此时只会有激活类别的内容）
-
-      // 若有类别成功加载，视为成功隐藏不可用提示
-      if (cats.length > 0) setPhrasesUnavailable(false);
-      else {
-        // 没有任何类别也算一种异常（可能后端返回空）——按需可提示，这里保持隐藏
-      }
-    } catch (e) {
-      console.warn('加载类别和话术失败：', e);
-      if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
-    }
-  }
+   async function loadRemotePhrasesText(force = false) {
+     const TYPE_CLASS_TEXT = 2;
+     try {
+       setPhrasesUnavailable(false);
+       const prevActive = getActiveCat(); // 记录当前激活
+       const resp = await API.content.types({ typeClass: TYPE_CLASS_TEXT });
+       const grouped = (resp && resp.data) || {};
+ 
+       let typesArr = [];
+       const tabKey = currentTab;
+       if (tabKey === 'corp') typesArr = grouped.company || grouped.corp || grouped['公司'] || [];
+       else if (tabKey === 'group') typesArr = grouped.team || grouped.group || grouped['小组'] || [];
+       else if (tabKey === 'private') typesArr = grouped.personal || grouped.private || grouped['私人'] || [];
+ 
+       allTypeIdMap[tabKey] = {};
+       const cats = [];
+       (typesArr || []).forEach(t => {
+         const typeId = t.id || t.typeId || t.contentTypeId;
+         const title = t.title || t.name || ('分类-' + (typeId ?? ''));
+         if (!typeId) return;
+         cats.push({ name: title, id: typeId, items: [], _loaded: false });
+         allTypeIdMap[tabKey][title] = typeId;
+       });
+ 
+       // 如果之前激活的类别不在远端返回（刚建还没刷新），把本地的插入进去
+       if (prevActive && !cats.find(c => c.name === prevActive)) {
+         const localExisting = allData[tabKey].cats.find(c => c.name === prevActive);
+         if (localExisting) {
+           cats.push({
+             name: localExisting.name,
+             id: localExisting.id || 0,
+             items: localExisting.items || [],
+             _loaded: localExisting._loaded || false
+           });
+           // 保留 active，不强制切换
+         }
+       }
+ 
+       allData[tabKey] = { cats };
+ 
+       // 选中：如果 prevActive 仍存在则保留，否则选第一个
+       let active = prevActive && cats.find(c => c.name === prevActive) ? prevActive : (cats[0]?.name || '');
+       if (active && active !== getActiveCat()) setActiveCat(active);
+ 
+       renderCats();
+       if (active) await loadCatItemsByName(active);
+       renderList();
+       bindContextMenus();
+       if (cats.length > 0) setPhrasesUnavailable(false);
+     } catch (e) {
+       console.warn('加载类别和话术失败：', e);
+       if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
+     }
+   }
 
   async function loadCatItemsByName(catName) {
     const TYPE_CLASS_TEXT = 2;
@@ -584,7 +717,11 @@
         typeId
       });
       const list = (listResp && listResp.data) || [];
-      cat.items = list.map(i => i.content || i.text || '').filter(Boolean);
+      cat.items = list.map(i => ({
+        id: i.id || i.contentId || i.cid,
+        text: (i.content || i.text || '').trim()
+      })).filter(o => o.text);
+
       cat._loaded = true;
       // 成功加载某个类别内容后隐藏不可用提示（可能之前失败过）
       setPhrasesUnavailable(false);
@@ -593,6 +730,246 @@
       if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
     }
   }
+
+  // 新增：根据当前激活类别获取对象
+  function getCurrentCatObj() {
+    const data = getData();
+    const active = getActiveCat();
+    if (!data || !active) return null;
+    return data.cats.find(c => c.name === active);
+  }
+  // 权限判断复用
+  function canEditDelete(tab) {
+    if (tab === 'private') return true;
+    if (tab === 'group') return currentUserIsAdmin();
+    return false;
+  }
+
+  // 绑定右键事件（在 init() 最后或 renderCats/renderList 后调用一次）
+  function bindContextMenus() {
+    // 类别右键
+    ['corp', 'group', 'private'].forEach(t => {
+      const wrap = document.getElementById('phrase-cats-' + t);
+      if (!wrap) return;
+      // 在 bindContextMenus 内，替换“类别右键”里从获取 count 开始到 showContextMenu 之间的代码
+      wrap.oncontextmenu = (e) => {
+        const btn = e.target.closest('.cat');
+        if (!btn) return;
+        if (!canEditDelete(t)) return; // 权限
+        e.preventDefault();
+
+        const catName = btn.dataset.cat;
+        const catId = btn.dataset.id;
+
+        // 用当前内存数据计算条数，避免 dataset 不准
+        const dataTab = getData();
+        const catObj = dataTab?.cats?.find(c => c.name === catName);
+        const count = Array.isArray(catObj?.items) ? catObj.items.length : 0;
+
+        const items = [];
+
+        // 编辑
+        items.push({
+          label: '编辑类别',
+          act: 'edit',
+          onClick: async () => {
+            const newTitle = await uiEditPrompt(catName, '编辑类别名称');
+            if (!newTitle || newTitle === catName) return;
+            try {
+              const resp = await API.post('/api/front/content/updateType', {
+                id: Number(catId),
+                title: newTitle
+              });
+              if (!resp || resp.status !== 'success') {
+                showToast(resp?.message || '修改失败', {
+                  type: 'error',
+                  duration: 1500
+                });
+                return;
+              }
+              // 本地立即更新与重渲染
+              if (catObj) catObj.name = newTitle;
+              setActiveCat(newTitle);
+              renderCats();
+              renderList();
+              showToast('修改成功');
+              // 后台同步刷新
+              loadRemotePhrasesText(true);
+            } catch (err) {
+              alert(err.message || '修改失败');
+            }
+          }
+        });
+
+        // 删除（始终显示；若有内容则提示先删除内容）
+        items.push({
+          label: count > 0 ? '删除类别' : '删除类别',
+          act: 'del',
+          onClick: async () => {
+            if (count > 0) {
+              showToast('该类别里面有内容，请先删除内容', {
+                duration: 1500
+              });
+              return;
+            }
+            const ok = await uiConfirm({
+              title: '删除类别',
+              message: `确定删除类别【${catName}】吗？（不可恢复）`,
+              okText: '删除',
+              danger: true
+            });
+            if (!ok) return;
+
+            try {
+              const resp = await API.post('/api/front/content/delType', {
+                id: Number(catId)
+              });
+              if (!resp || resp.status !== 'success') {
+                showToast(resp?.message || '删除失败', {
+                  type: 'error',
+                  duration: 1500
+                });
+                return;
+              }
+              // 本地立即移除并重渲染
+              if (dataTab?.cats) {
+                dataTab.cats = dataTab.cats.filter(c => String(c.id) !== String(catId));
+                const first = dataTab.cats[0]?.name || '';
+                setActiveCat(first);
+              }
+              renderCats();
+              renderList();
+              showToast('删除成功');
+              // 后台同步刷新
+              loadRemotePhrasesText(true);
+            } catch (err) {
+              showToast(resp?.message || '删除失败', {
+                type: 'error',
+                duration: 1500
+              });
+            }
+          }
+        });
+
+        showContextMenu(e.pageX, e.pageY, items);
+      };
+    });
+
+    // 短语右键（仅 group/private）
+    // 短语右键（仅 group/private）——整段替换
+    ['group', 'private'].forEach(t => {
+      const listWrap = document.getElementById('phrase-list-' + t);
+      if (!listWrap) return;
+      listWrap.oncontextmenu = (e) => {
+        const item = e.target.closest('.phrase-item');
+        if (!item) return;
+        if (!canEditDelete(t)) return;
+        e.preventDefault();
+
+        const text = item.dataset.text || '';
+        const id = item.dataset.id;
+        if (!id) return;
+
+        const items = [{
+            label: '编辑短语',
+            act: 'edit',
+            onClick: async () => {
+              const newText = await uiEditPrompt(text, '编辑短语内容');
+              if (!newText || newText === text) return;
+              try {
+                const resp = await API.post('/api/front/content/updateContent', {
+                  id: Number(id),
+                  content: newText
+                });
+                if (!resp || resp.status !== 'success') {
+                  showToast(resp?.message || '修改失败', {
+                    type: 'error',
+                    duration: 1500
+                  });
+                  return;
+                }
+                // 本地立即更新并重渲染
+                const catObj = getCurrentCatObj();
+                if (catObj && Array.isArray(catObj.items)) {
+                  const it = catObj.items.find(x => String(x.id) === String(id));
+                  if (it) it.text = newText;
+                }
+                renderList();
+                showToast('修改成功', {
+                  type: 'success'
+                });
+                // 后台再拉一次该类别以校准（可选）
+                loadCatItemsByName(getActiveCat());
+              } catch (err) {
+                showToast(err.message || '修改失败', {
+                  type: 'error',
+                  duration: 1500
+                });
+              }
+            }
+          },
+          {
+            label: '删除短语',
+            act: 'del',
+            onClick: async () => {
+              const ok = await uiConfirm({
+                title: '删除短语',
+                message: '确定删除该短语吗？（不可恢复）',
+                okText: '删除',
+                danger: true
+              });
+              if (!ok) return;
+
+              // 本地先移除实现“立即消失”，失败再回滚
+              const catObj = getCurrentCatObj();
+              let backup = null,
+                idx = -1;
+              if (catObj && Array.isArray(catObj.items)) {
+                idx = catObj.items.findIndex(x => String(x.id) === String(id));
+                if (idx >= 0) {
+                  backup = catObj.items[idx];
+                  catObj.items.splice(idx, 1);
+                  renderList();
+                }
+              }
+              try {
+                const resp = await API.post('/api/front/content/delContent', {
+                  id: Number(id)
+                });
+                if (!resp || resp.status !== 'success') {
+                  if (backup && catObj && idx >= 0) {
+                    catObj.items.splice(idx, 0, backup);
+                    renderList();
+                  }
+                  showToast(resp?.message || '删除失败', {
+                    type: 'error',
+                    duration: 1500
+                  });
+                  return;
+                }
+                showToast('删除成功', {
+                  type: 'success'
+                });
+                // 可选：后台同步刷新该类别
+                loadCatItemsByName(getActiveCat());
+              } catch (err) {
+                if (backup && catObj && idx >= 0) {
+                  catObj.items.splice(idx, 0, backup);
+                  renderList();
+                }
+                showToast(err.message || '删除失败', {
+                  type: 'error',
+                  duration: 1500
+                });
+              }
+            }
+          }
+        ];
+        showContextMenu(e.pageX, e.pageY, items);
+      };
+    });
+  }
+
 
   if (document.readyState === 'loading') {
     window.addEventListener('DOMContentLoaded', init);

@@ -8,7 +8,7 @@
    * - 或通过 localStorage：localStorage.setItem('api.baseURL', 'https://your-api.example.com')
    * 此文件不再设置或覆盖 baseURL，确保“唯一配置入口”。
    */
-
+  let loginModalVisible = false; // 新增：防止重复弹出登录框
   const $ = (sel, root = document) => root.querySelector(sel);
 
   // 注入登录弹窗样式（仅注入一次）
@@ -52,6 +52,8 @@
 
   // 展示登录弹窗与处理登录流程
   function showLoginModal() {
+    if (loginModalVisible) return; // 新增：已显示则不再创建
+    loginModalVisible = true; // 新增：打开时即标记，防止重复弹
     ensureStyles();
     const mask = document.createElement('div');
     mask.className = 'auth-mask';
@@ -81,6 +83,7 @@
       try {
         mask.remove();
       } catch {}
+      loginModalVisible = false; // 新增：关闭后清除标记
     };
 
     btnCancel && (btnCancel.onclick = close);
@@ -123,6 +126,11 @@
         await API.auth.profile({
           save: true
         });
+
+        // 新增：清除“需要重新登录”一次性标记
+        try {
+          localStorage.removeItem('auth.needsLogin');
+        } catch {}
         //通知短语模块去加载公司/小组类别与话术（文本类）
         window.dispatchEvent(new CustomEvent('auth:login', {
           detail: {
@@ -165,6 +173,7 @@
               });
             } catch (e) {}
             updateFooterAuthUI();
+            
             // 新增：派发登出事件，phrases.js 会根据 isAdmin 为空隐藏“小组＋”
             window.dispatchEvent(new CustomEvent('auth:logout'));
           });
@@ -176,17 +185,28 @@
       });
     }
     updateFooterAuthUI();
+    // 新增：若 401 发生在监听挂载前，通过 localStorage 标记补偿弹窗
+    try {
+      if (localStorage.getItem('auth.needsLogin') === '1') {
+        localStorage.removeItem('auth.needsLogin');
+        showLoginModal();
+      }
+    } catch {}
+    // 新增：监听 API 层派发的 401 事件
+    window.addEventListener('auth:login-required', () => {
+      showLoginModal();
+    });
   }
   // 新增自定义确认弹窗函数（放在文件末尾即可）
   function showConfirmModal(message, onConfirm, onCancel) {
     // 移除已有弹窗
     const old = document.getElementById('auth-confirm-modal');
     if (old) old.remove();
-ensureStyles();
-   const mask = document.createElement('div');
-     mask.id = 'auth-confirm-modal';
-     mask.className = 'auth-mask';
-     mask.innerHTML = `
+    ensureStyles();
+    const mask = document.createElement('div');
+    mask.id = 'auth-confirm-modal';
+    mask.className = 'auth-mask';
+    mask.innerHTML = `
        <div class="auth-dialog" role="dialog" aria-modal="true" style="min-width:260px;">
          <h3 style="margin-bottom:18px;">${message || '确认操作'}</h3>
          <div style="display:flex;justify-content:flex-end;gap:10px;">
@@ -195,7 +215,7 @@ ensureStyles();
          </div>
        </div>
      `;
-     document.body.appendChild(mask);
+    document.body.appendChild(mask);
 
     $('#auth-confirm-cancel', mask).onclick = () => {
       mask.remove();

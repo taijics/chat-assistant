@@ -123,6 +123,7 @@
    * - 自动拼接 baseURL
    * - 自动附带鉴权头（优先使用 tokenName，默认为 "auth-token"；若为 "Authorization" 则按 Bearer 方案）
    * - 默认超时 15s
+   * - 支持 FormData（用于文件上传）
    */
   async function request(path, {
     method = 'GET',
@@ -134,11 +135,13 @@
     const tn = getTokenName() || 'auth-token'; // 来自 OpenAPI 约定的默认请求头键名
     const url = buildURL(path);
 
+    const isForm = (typeof FormData !== 'undefined') && (body instanceof FormData);
+
     const h = {
       ...headers
     };
-    // 发送 JSON 时补齐 Content-Type
-    if (body != null && (typeof body === 'object' || typeof body === 'string')) {
+    // 发送 JSON 时补齐 Content-Type；FormData 不设置，让浏览器自动生成 boundary
+    if (body != null && !isForm) {
       if (!h['Content-Type'] && !h['content-type']) {
         h['Content-Type'] = 'application/json';
       }
@@ -163,7 +166,7 @@
       resp = await fetch(url, {
         method,
         headers: h,
-        body: body != null ? JSON.stringify(body) : undefined,
+        body: body == null ? undefined : (isForm ? body : JSON.stringify(body)),
         signal: controller.signal
       });
     } finally {
@@ -179,6 +182,25 @@
     }
 
     if (!resp.ok) {
+      // 统一处理 401 未授权 -> 触发重新登录
+      if (resp.status === 401) {
+        try {
+          setToken('');
+          setTokenName('');
+          setUser(null);
+          localStorage.setItem('auth.needsLogin', '1'); // 标记一次，以防事件监听尚未挂载
+        } catch {}
+        try {
+          window.dispatchEvent(new CustomEvent('auth:login-required', {
+            detail: {
+              url,
+              method,
+              status: resp.status
+            }
+          }));
+        } catch {}
+      }
+
       const err = new Error((data && (data.message || data.msg)) || resp.statusText || 'Request failed');
       err.status = resp.status;
       err.data = data;
@@ -195,6 +217,13 @@
     ...opts,
     method: 'POST',
     body
+  });
+
+  // 发送表单（文件上传）
+  const postForm = (p, formData, opts = {}) => request(p, {
+    ...opts,
+    method: 'POST',
+    body: formData
   });
 
   // -------------------- 高层 API（基于 OpenAPI 定义） --------------------
@@ -300,9 +329,23 @@
         useScope, // 1=小组，2=私人
         contentTypeId, // 为空则会按 title 新建类别
         title, // 新建类别标题
-        content, // 可选：要添加的话术内容
+        content, // 可选：要添加的话术内容或图片URL
         typeClass // 0图片 1表情 2文字（默认传 2）
       });
+    }
+  };
+
+  // 文件上传（COS）
+  const Files = {
+    /**
+     * 上传单个文件，返回后端响应
+     * 默认接口：/api/file/operation/upload
+     * 如你的后端是别的路径，可在此调整
+     */
+    async upload(file) {
+      const fd = new FormData();
+      fd.append('file', file);
+      return postForm('/api/front/upload', fd);
     }
   };
 
@@ -328,10 +371,12 @@
     request,
     get,
     post,
+    postForm,
 
     // 高层端点
     auth: Auth,
     agent: Agent,
-    content: Content
+    content: Content,
+    files: Files
   };
 })();
