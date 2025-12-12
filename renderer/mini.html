@@ -1,12 +1,31 @@
 <!doctype html>
-<html>
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
   <title>Mini</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #2b2f3a; color: #fff; font-family: Arial, sans-serif; }
-    .wrap { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; }
-    .wrap:hover { background: #3a4050; }
+    /* 全窗口就是按钮：天蓝底、白字、居中，无任何花哨效果 */
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #3aa3ff;      /* 天蓝色背景（可改为 #1e90ff / #4aa3ff） */
+      color: #ffffff;           /* 白字 */
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, "PingFang SC","Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+      -webkit-app-region: no-drag; /* 禁止拖拽，避免被用户拖跑 */
+    }
+    .wrap {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
   </style>
 </head>
 <body>
@@ -15,6 +34,9 @@
     const { ipcRenderer } = require('electron');
     document.getElementById('wrap').addEventListener('click', () => {
       ipcRenderer.send('restore-main-window');
+    });
+    document.getElementById('wrap').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ipcRenderer.send('restore-main-window'); }
     });
   </script>
 </body>

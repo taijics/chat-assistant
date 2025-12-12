@@ -1,6 +1,7 @@
 const {
   app
 } = require('electron');
+const ocr = require('./python-ocr');
 app.setPath('userData', 'D:\\chat-assistant-userdata'); // 确保该目录你有完全读写权限
 const {
   BrowserWindow,
@@ -12,33 +13,211 @@ const {
   Menu,
   nativeImage
 } = require('electron');
-
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const {
+  exec,
+  spawnSync
+} = require('child_process'); // 新增 spawnSync，合并 exec
+let qqFocusHelperPath = null;
 // === 退出防护：仅显式允许退出（NEW） ===
 const realAppQuit = app.quit.bind(app);
 const realAppExit = (app.exit ? app.exit.bind(app) : (code) => {});
 const realProcExit = process.exit.bind(process);
 let allowQuit = false;
 
+let gifStoreDir = path.join(app.getPath('userData'), 'gif-cache');
+
+function ensureGifStoreDir() {
+  try {
+    fs.mkdirSync(gifStoreDir, {
+      recursive: true
+    });
+    // 简单写权限测试
+    const testFile = path.join(gifStoreDir, '__test_' + Date.now() + '.tmp');
+    fs.writeFileSync(testFile, 'ok');
+    fs.unlinkSync(testFile);
+    return gifStoreDir;
+  } catch (e) {
+    console.warn('[gif-cache] primary dir fail -> fallback tmp:', e.message);
+    gifStoreDir = path.join(os.tmpdir(), 'chat-assistant-gif-cache');
+    try {
+      fs.mkdirSync(gifStoreDir, {
+        recursive: true
+      });
+    } catch {}
+    return gifStoreDir;
+  }
+}
+let fileDropHelperPath = null;
+
+function locateFileDropHelper() {
+  try {
+    if (app.isPackaged) {
+      // extraResources -> resources 根
+      const p1 = path.join(process.resourcesPath, 'set-clipboard-files.exe');
+      if (fs.existsSync(p1)) return p1;
+      // 兼容 asarUnpack 路径
+      const p2 = path.join(process.resourcesPath, 'app.asar.unpacked', 'main', 'set-clipboard-files.exe');
+      if (fs.existsSync(p2)) return p2;
+      // 兼容被放到 extra 子目录的情况
+      const p3 = path.join(process.resourcesPath, 'extra', 'set-clipboard-files.exe');
+      if (fs.existsSync(p3)) return p3;
+      return null;
+    } else {
+      // 开发模式：直接 main 目录
+      const local = path.join(__dirname, 'set-clipboard-files.exe');
+      if (fs.existsSync(local)) return local;
+      return null;
+    }
+  } catch (e) {
+    console.warn('[filedrop] locate helper fail:', e.message);
+    return null;
+  }
+}
+
+function focusQQMainWindow() {
+  try {
+    if (!windowManager || !windowManager.getWindows) return false;
+    const wins = windowManager.getWindows();
+    if (!Array.isArray(wins) || !wins.length) return false;
+    // 选同显示器、面积最大的 QQ 候选
+    const qqTitleRe = /(^|\s)QQ(\s|$)|QQNT|TIM|腾讯QQ/i;
+    let best = null,
+      bestArea = -1;
+    for (const w of wins) {
+      const t = String(w.getTitle?.() || '');
+      const p = String(w.process?.name || '').replace(/\.exe$/i, '');
+      if (!(qqTitleRe.test(t) || /^(QQ|QQNT|TIM|QQEX)$/i.test(p))) continue;
+      const b = w.getBounds?.();
+      if (!b || !isFinite(b.width) || !isFinite(b.height)) continue;
+      if (b.width < 460 || b.height < 320) continue;
+      const area = Math.round(b.width) * Math.round(b.height);
+      if (area > bestArea) {
+        bestArea = area;
+        best = w;
+      }
+    }
+    if (best) {
+      try {
+        best.bringToTop();
+      } catch {}
+      try {
+        best.focus();
+      } catch {}
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+function ensureFileDropHelperReady() {
+  fileDropHelperPath = locateFileDropHelper();
+  if (app.isPackaged) {
+    if (fileDropHelperPath) {
+      return true;
+    }
+    return false;
+  }
+  // 开发模式：如已有 exe 直接用
+  if (fileDropHelperPath) {
+    return true;
+  }
+  // 尝试编译（仅开发）
+  const src = path.join(__dirname, 'set-clipboard-files.cs');
+  if (!fs.existsSync(src)) {
+    return false;
+  }
+  const csc = findCscForFileDrop();
+  if (!csc) {
+    console.warn('[filedrop] csc not found (dev compile skipped)');
+    return false;
+  }
+  const out = path.join(__dirname, 'set-clipboard-files.exe');
+  const r = spawnSync(csc, ['/nologo', '/optimize+', '/platform:x64', '/out:' + out, src], {
+    windowsHide: true,
+    encoding: 'utf8'
+  });
+  if (r.status === 0 && fs.existsSync(out)) {
+    fileDropHelperPath = out;
+    return true;
+  }
+  return false;
+}
+
+function setClipboardFiles(paths) {
+  if (!Array.isArray(paths) || !paths.length) return false;
+  if (!ensureFileDropHelperReady()) return false;
+  try {
+    const res = spawnSync(fileDropHelperPath, paths, {
+      windowsHide: true,
+      encoding: 'utf8'
+    });
+    if (res.status !== 0) {
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn('[filedrop] exec error:', e.message);
+    return false;
+  }
+}
+// 启动后预热
+app.whenReady().then(() => {
+  ensureGifStoreDir();
+  try {
+    ensureFileDropHelperReady();
+  } catch {}
+});
+
+function safeRandomGifName() {
+  return 'gif_' + Date.now() + '_' + Math.random().toString(16).slice(2) + '.gif';
+}
+
+function sanitizeFilename(name) {
+  let n = (name || '').replace(/[\r\n\t]/g, '');
+  if (!n.endsWith('.gif')) n += '.gif';
+  n = n.replace(/[^A-Za-z0-9._-]/g, '_');
+  if (n.length > 80) n = n.slice(0, 80);
+  return n;
+}
+
+function findCscForFileDrop() {
+  const candidates = [
+    'csc',
+    'C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\MSBuild\\Current\\Bin\\Roslyn\\csc.exe',
+    'C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\Roslyn\\csc.exe',
+    'C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\BuildTools\\MSBuild\\Current\\Bin\\Roslyn\\csc.exe'
+  ];
+  for (const p of candidates) {
+    try {
+      if (p === 'csc') {
+        const trial = spawnSync('csc', ['/nologo'], {
+          windowsHide: true
+        });
+        if (trial.status === 0 || trial.stderr) return 'csc';
+      } else if (fs.existsSync(p)) return p;
+    } catch {}
+  }
+  return null;
+}
+
 function enableQuit() {
   allowQuit = true;
 }
 app.quit = () => {
   if (allowQuit) return realAppQuit();
-  try {
-    console.log('[guard] app.quit blocked');
-  } catch {}
+  try {} catch {}
 };
 app.exit = (code) => {
   if (allowQuit) return realAppExit(code);
-  try {
-    console.log('[guard] app.exit blocked', code);
-  } catch {}
+  try {} catch {}
 };
 process.exit = (code) => {
   if (allowQuit) return realProcExit(code);
-  try {
-    console.log('[guard] process.exit blocked', code);
-  } catch {}
+  try {} catch {}
 };
 // ======================================
 
@@ -64,7 +243,6 @@ let wechatMonitor;
   for (const p of tryPaths) {
     try {
       wechatMonitor = require(p);
-      console.log('[wechatMonitor] resolved:', p);
       return;
     } catch {}
   }
@@ -102,9 +280,6 @@ try {
   } catch {}
 }
 
-const {
-  exec
-} = require('child_process');
 
 // node-window-manager
 let windowManager = null;
@@ -112,7 +287,6 @@ try {
   ({
     windowManager
   } = require('node-window-manager'));
-  console.log('[deps] node-window-manager loaded');
 } catch (e) {
   console.warn('[deps] node-window-manager not loaded:', e && e.message);
   windowManager = {
@@ -127,7 +301,7 @@ try {
 
 let mainWindow = null;
 let miniWindow = null;
-let keeperWindow = null; // 新增哨兵窗口
+let keeperWindow = null; // 哨兵窗口
 
 let animationTimer = null;
 const LERP_SPEED = 0.22;
@@ -138,10 +312,9 @@ const ASSISTANT_MAX_W = 1400;
 let assistWidth = 350;
 const MIN_HEIGHT = 200;
 const DOCK_GAP_FIX_DIPS = 2;
-// 再靠近主窗体的物理像素（按显示器缩放换算到 DIP）
 const EXTRA_NUDGE_PHYSICAL_PX = 6;
-// 前台判定与跟随开关
 let isWechatActive = false;
+
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
@@ -171,97 +344,119 @@ let quitting = false;
 let pinnedAlwaysOnTop = false;
 let lastWechatPxRect = null;
 
-// 前台轮询
 let fgFollowTimer = null;
 const FG_CHECK_INTERVAL = 250;
-// 新增状态与限制
 let lastStableAssistantHeight = 600;
-let dockSide = null; // 'right' 或 'left'
+let dockSide = null;
 const MAX_ASSISTANT_HEIGHT_MARGIN = 40;
-// 截图期状态（保留）
 let screenshotInProgress = false;
 let preShotWechatRect = null;
-
-// 新增：用于判断 destroyed 是否为瞬时（截图/临时）
 let lastFoundAt = 0;
 const TRANSIENT_DESTROY_MS = 3000;
 
-// ==== 新增辅助与状态（放在顶部已有常量附近） ====
-let freezePosition = false; // 是否冻结位置更新
-let screenshotPhase = 0; // 0=正常 1=截图中 2=截图刚结束等待首个正常 rect
-let lastValidWechatRect = null; // 最近一次可信的微信矩形
-let lastDockX = null; // 最近一次使用的 dock X（用于冻结时复用）
+let freezePosition = false;
+let screenshotPhase = 0;
+let lastValidWechatRect = null;
+let lastDockX = null;
 let lastBaselineRect = null;
 let baselineArea = null;
 let screenshotEndedAt = 0;
 let ignoreEphemeralUntil = 0;
-function isRectNearFull(pxRect) {
-  if (!pxRect) return false;
-  const dip = pxToDipRect(pxRect);
-  const wa = dip.display.workArea;
-  if (!wa) return false;
-  return (dip.width >= wa.width * 0.95) && (dip.height >= wa.height * 0.95);
-}
 
-// 可能是临时（截图层、过渡动画、全屏虚假）条件：宽高异常或 X,Y 负得过大
-function isRectSuspicious(pxRect) {
-  if (!pxRect) return true;
-  const dip = pxToDipRect(pxRect);
-  const wa = dip.display.workArea;
-  if (!wa) return true;
-  if (dip.width <= 80 || dip.height <= 80) return true;
-  if (dip.width >= wa.width * 1.1 || dip.height >= wa.height * 1.1) return true;
-  if (dip.x < wa.x - wa.width * 0.3 || dip.y < wa.y - wa.height * 0.3) return true;
-  return false;
-}
+
+
+
+
 function computeIsWechatActive() {
   try {
+    if (!windowManager || !windowManager.getActiveWindow) {
+      return false;
+    }
     const active = windowManager.getActiveWindow();
-    if (!active) return false;
-    return (
-      Number(active.handle) === Number(wechatHWND) ||
-      /微信|wechat/i.test(active.getTitle() || '')
-    );
-  } catch { return false; }
+    if (!active) {
+      return false;
+    }
+
+    const title = String(active.getTitle?.() || '');
+    const procRaw = String(active.process?.name || '');
+    const procName = procRaw.replace(/\.exe$/i, '');
+    const procPath = String(active.process?.path || '');
+
+    // 用统一的 classifyWindowType 判断类型
+    const type = classifyWindowType(active, 'computeIsWechatActive:active'); // qq/wechat/enterprise/null
+
+    // “是否视为聊天前台”的结果
+    let result = false;
+
+    // 企微：走原来的 ENTERPRISE_PROC_SET 判定
+    const ENTERPRISE_PROC_SET = new Set(['WXWork', 'WeCom', 'WeChatAppEx', 'WXWorkWeb', 'WeMail', 'WXDrive']);
+    if (/企业微信|wxwork|wecom/i.test(title)) result = true;
+    if (ENTERPRISE_PROC_SET.has(procName)) result = true;
+    if (/WXWork|WeCom/i.test(procPath)) result = true;
+
+    // 绑定 wechatHWND 的窗口
+    if (wechatHWND && Number(active.handle) === Number(wechatHWND)) {
+      result = true;
+    }
+
+    // 普通微信
+    if (/微信|wechat|weixin/i.test(title)) result = true;
+    if (/wechat|weixin/i.test(procName)) result = true;
+
+    // QQ：是否也算“激活聊天窗”，你可以按需求改
+    const isQQ =
+      /(^|\s)qq(\s|$)|qqnt|qqex|tim|腾讯qq/i.test(title) ||
+      /^(QQ|QQNT|QQEX|TIM)$/i.test(procName) ||
+      /(\\|\/)(Tencent|QQ|QQNT|TIM)(\\|\/)/i.test(procPath);
+    if (isQQ) {
+      // 这里如果你希望 QQ 也驱动贴靠，就保留；否则可以注释掉
+      result = true;
+    }
+
+
+    return result;
+  } catch (e) {
+    return false;
+  }
 }
+
 function shouldFollowNow() {
   return wechatFound && isWechatActive && !userHidden && !pinnedAlwaysOnTop;
 }
-// 条件：找到微信窗口 + 当前确实在前台（即吸附/前台）
-function canSendNow() {
-  try {
-    // 即时刷新一次前台态，避免老状态误判
-    isWechatActive = computeIsWechatActive();
-  } catch {}
-  return !!(wechatFound && isWechatActive);
-}
-// 冻结时强制保持窗口位置与大小
+
+
 function applyFrozen() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (lastDockX == null || !lastValidWechatRect) return;
-  if (!shouldFollowNow()) return; // 后台时不动
+  if (!shouldFollowNow()) return;
   const dip = pxToDipRect(lastValidWechatRect);
-  const h  = computeAssistantHeightFromWechatRect(lastValidWechatRect);
+  const h = computeAssistantHeightFromWechatRect(lastValidWechatRect);
   target.x = lastDockX;
   target.y = dip.y;
   target.h = h;
   applyTargetImmediate();
 }
 
-
-// 放在文件顶部 windowManager 可用之后
 function getWechatWindowViaWM() {
   try {
     if (!windowManager || !windowManager.getWindows) return null;
     const wins = windowManager.getWindows();
     if (!Array.isArray(wins) || !wins.length) return null;
-    // 优先企业微信/wxwork，其次微信/weixin
-    const pick = (re) => wins.find(w => {
+    const enterpriseRe = /企业微信|wxwork|wecom|WeChatAppEx|WXWorkWeb|WeMail|WXDrive/i;
+    const genericRe = /微信|wechat|weixin/i;
+    const qqRe = /(^|\s)QQ(\s|$)|QQNT/i; // 标题含 QQ/QQNT
+
+    const pick = (re, procList) => wins.find(w => {
       const t = String(w.getTitle?.() || '');
-      const p = String(w?.process?.name || '');
-      return re.test(t) || re.test(p);
+      const p = String(w.process?.name || '').replace(/\.exe$/i, '');
+      return re.test(t) || (procList && procList.includes(p));
     });
-    let w = pick(/企业微信|wxwork/i) || pick(/微信|wechat|weixin/i);
+
+    // 先企业微信，再微信，最后 QQ
+    let w = pick(enterpriseRe, ['WXWork', 'WeCom', 'WeChatAppEx', 'WXWorkWeb', 'WeMail', 'WXDrive']) ||
+      pick(genericRe, ['WeChat', 'Weixin', 'WeChatAppEx']) ||
+      pick(qqRe, ['QQ', 'QQNT']); // 进程名为 QQ/QQNT
+
     if (!w) return null;
     const b = w.getBounds?.();
     if (!b || !isFinite(b.x) || !isFinite(b.y) || !isFinite(b.width) || !isFinite(b.height)) return null;
@@ -278,7 +473,7 @@ function getWechatWindowViaWM() {
     return null;
   }
 }
-// 工具：显示器与坐标换算
+
 function findDisplayForPhysicalRect(pxRect) {
   const displays = screen.getAllDisplays();
   let best = displays[0],
@@ -318,45 +513,32 @@ function pxToDipRect(pxRect) {
 }
 
 function computeDockX(pxRect, width) {
-  console.log(pxRect, width)
   const display = findDisplayForPhysicalRect(pxRect);
   const s = display.scaleFactor || 1;
   const wa = display.workArea;
   const wechatLeftDip = Math.floor(pxRect.x / s);
   const wechatRightDip = Math.floor((pxRect.x + pxRect.width) / s);
-
-  // 把 3px 换算为 DIP，至少 1 DIP，叠加到原有修正
   const extraDip = Math.max(1, Math.round(EXTRA_NUDGE_PHYSICAL_PX / s));
   const gapDip = DOCK_GAP_FIX_DIPS + extraDip;
-
-  // 初次确定 dockSide
   if (!dockSide) {
-    if (wechatRightDip + width <= wa.x + wa.width) dockSide = 'right';
-    else dockSide = 'left';
+    dockSide = (wechatRightDip + width <= wa.x + wa.width) ? 'right' : 'left';
   }
-
   let nextX;
   if (dockSide === 'right') {
     if (wechatRightDip + width <= wa.x + wa.width) {
-      // 再向主窗体靠近 gapDip（更贴）
       nextX = wechatRightDip - gapDip;
     } else {
-      // 右侧放不下，切换一次到左侧
       dockSide = 'left';
-      // 左侧也向右 nudged gapDip 让缝更小
       nextX = wechatLeftDip - width + gapDip;
     }
-  } else { // left
+  } else {
     if (wechatLeftDip - width >= wa.x) {
-      // 左侧同样靠近（右 nudged）
       nextX = wechatLeftDip - width + gapDip;
     } else {
-      // 左侧放不下，切到右侧
       dockSide = 'right';
       nextX = wechatRightDip - gapDip;
     }
   }
-
   if (nextX < wa.x) nextX = wa.x;
   const maxX = wa.x + wa.width - width;
   if (nextX > maxX) nextX = maxX;
@@ -368,18 +550,12 @@ function computeAssistantHeightFromWechatRect(pxRect) {
   const dip = pxToDipRect(pxRect);
   const rawHeight = dip.height;
   const maxAllowed = Math.max(MIN_HEIGHT, (dip.display.workArea?.height || rawHeight) - MAX_ASSISTANT_HEIGHT_MARGIN);
-
-  // 明显异常：超过最大允许高度 1.25 倍（可能是截屏层 / 虚假）
-  if (rawHeight > maxAllowed * 1.25) {
-    return lastStableAssistantHeight; // 回退
-  }
-
+  if (rawHeight > maxAllowed * 1.25) return lastStableAssistantHeight;
   const h = clamp(rawHeight, MIN_HEIGHT, maxAllowed);
   lastStableAssistantHeight = h;
   return h;
 }
 
-// 复用贴边
 function reDockFromLastRect() {
   if (!lastWechatPxRect) return false;
   const r = lastWechatPxRect;
@@ -387,44 +563,72 @@ function reDockFromLastRect() {
   const dockX = computeDockX(r, assistWidth);
   const dip = pxToDipRect(r);
   const h = computeAssistantHeightFromWechatRect(r);
-  target = { x: dockX, y: dip.y, w: assistWidth, h };
-  if (shouldFollowNow()) applyTargetImmediate(); // 仅前台时应用
+  target = {
+    x: dockX,
+    y: dip.y,
+    w: assistWidth,
+    h
+  };
+  if (shouldFollowNow()) applyTargetImmediate();
   return true;
 }
-// 放在 reDockFromLastRect 后面，新增一个“立即贴靠”工具（可强制应用）
-function dockToWechatNow(force = false) {
+
+
+
+// >>> ADDED or CHANGED: 定位迷你窗到对应显示器右上角
+function positionMiniWindow() {
+  if (!miniWindow || miniWindow.isDestroyed()) return;
   try {
-    let rect = lastWechatPxRect;
-    if (!rect) {
+    let display = null;
+    if (lastWechatPxRect) display = findDisplayForPhysicalRect(lastWechatPxRect);
+    if (!display) display = screen.getPrimaryDisplay();
+    const wa = display.workArea;
+    const W = 160,
+      H = 40;
+    const targetX = Math.round(wa.x + wa.width - 20 - W);
+    const targetY = Math.round(wa.y + 20);
+    miniWindow.setBounds({
+      x: targetX,
+      y: targetY,
+      width: W,
+      height: H
+    });
+  } catch (e) {
+    console.warn('[mini position] fail:', e.message);
+  }
+}
+
+// >>> ADDED or CHANGED: 统一恢复后吸附逻辑
+function restoreDockIfNeeded(source) {
+  try {
+    userHidden = false;
+    let activeNow = false;
+    try {
+      activeNow = computeIsWechatActive();
+    } catch {}
+    if (!wechatFound) {
       const info = getWechatWindowViaWM();
       if (info && info.rect && info.rect.width > 300 && info.rect.height > 300) {
         wechatFound = true;
         wechatHWND = info.hwnd || wechatHWND;
-        rect = info.rect;
-        lastWechatPxRect = rect;
-        acceptAsBaseline(rect);
+        lastWechatPxRect = info.rect;
+        acceptAsBaseline(info.rect);
       }
     }
-    if (!rect) return false;
-
-    const dockX = computeDockX(rect, assistWidth);
-    lastDockX = dockX;
-    const dip = pxToDipRect(rect);
-    const h = computeAssistantHeightFromWechatRect(rect);
-    target = { x: dockX, y: dip.y, w: assistWidth, h };
-
-    if (force || shouldFollowNow()) applyTargetImmediate();
-    return true;
-  } catch {
-    return false;
+    if (wechatFound && lastWechatPxRect) {
+      // 不再要求 activeNow；先贴靠
+      dockToWechatNow(true);
+      applyTargetImmediate();
+      if (activeNow) updateZOrder(); // 仅在企业微信前台才调整层级
+    } else {}
+  } catch (e) {
+    console.warn('[restoreDock] fail:', e.message);
   }
 }
 
 function createMainWindow() {
-  // 如果启动时还没有检测到主窗体，则把初始高度拉大
   if (!wechatFound && !lastWechatPxRect) {
     const waH = screen.getPrimaryDisplay().workAreaSize.height;
-    // 期望高度：基础 600 + 500 = 1100；但不超过工作区高度 - 40 边距
     const desired = clamp(600 + 200, MIN_HEIGHT, Math.max(MIN_HEIGHT, waH - 40));
     current.h = desired;
     target.h = desired;
@@ -434,7 +638,7 @@ function createMainWindow() {
 
   mainWindow = new BrowserWindow({
     width: assistWidth,
-    height: current.h,  // 不需要再用 initialH，直接用上面更新后的 current.h
+    height: current.h,
     frame: true,
     autoHideMenuBar: false,
     resizable: false,
@@ -448,18 +652,43 @@ function createMainWindow() {
     }
   });
 
+  // >>> CHANGED: 去掉 preventDefault，让系统真实最小化；仍显示 mini
   mainWindow.on('minimize', (e) => {
     if (quitting) return;
-    e.preventDefault();
+    // 不再阻止默认行为
+    try {
+      isWechatActive = computeIsWechatActive();
+    } catch {}
     userHidden = true;
     showMini();
   });
- mainWindow.on('close', (e) => {
-   if (quitting) return;           // 已在退出流程中则放行
-   e.preventDefault();             // 阻止默认关闭
-   enableQuit();                   // 打开退出防护
-   cleanupAndQuit();               // 走统一清理并退出
- });
+
+  mainWindow.on('close', (e) => {
+    if (quitting) return;
+    e.preventDefault();
+    enableQuit();
+    cleanupAndQuit();
+  });
+
+  mainWindow.on('show', () => {
+    userHidden = false; // >>> ensure restore from taskbar sets visible state
+    try {
+      if (miniWindow && !miniWindow.isDestroyed() && miniWindow.isVisible()) miniWindow.hide();
+    } catch {}
+  });
+  mainWindow.on('restore', () => {
+    userHidden = false; // >>> ADDED
+    try {
+      if (miniWindow && !miniWindow.isDestroyed() && miniWindow.isVisible()) miniWindow.hide();
+    } catch {}
+    restoreDockIfNeeded('restore-event'); // >>> ADDED
+  });
+  mainWindow.on('focus', () => {
+    userHidden = false; // >>> ADDED
+    try {
+      if (miniWindow && !miniWindow.isDestroyed() && miniWindow.isVisible()) miniWindow.hide();
+    } catch {}
+  });
 
   try {
     mainWindow.setHasShadow(false);
@@ -481,35 +710,29 @@ function createMainWindow() {
       label: '表情/图片',
       click: () => mainWindow.webContents.send('menu:switch-tab', 'emojis')
     },
-    {
+    /* {
       label: 'Help',
-      submenu: [{
-          label: 'Homepage',
-          click: () => shell.openExternal('https://github.com/')
-        },
-        {
-          label: '识别聊天用户列表',
-          click: () => {
+      submenu: [
+        { label: 'Homepage', click: () => shell.openExternal('https://github.com/') },
+        { label: '识别聊天用户列表', click: () => {
             const win = require('electron').BrowserWindow.getFocusedWindow();
             win.webContents.send('menu:recognize-wechat-users');
           }
         },
-        {
-          label: '百度token',
-          click: () => {
+        { label: '百度token', click: () => {
             const win = require('electron').BrowserWindow.getFocusedWindow();
             win.webContents.send('menu:baidu-token');
           }
         }
       ]
-    }
+    } */
   ];
   try {
     const menu = Menu.buildFromTemplate(template);
     Menu.setApplicationMenu(menu);
   } catch {}
   try {
-    mainWindow.setMenuBarVisibility(true);
+    mainWindow.setMenuBarVisibility(false);
   } catch {}
 
   mainWindow.loadFile(pathJoin(__dirname, '../renderer/index.html'));
@@ -570,6 +793,24 @@ function createMiniWindow() {
     e.preventDefault();
     miniWindow.hide();
   });
+  miniWindow.webContents.on('did-finish-load', () => {
+    try {
+      miniWindow.webContents.executeJavaScript(
+        `document.addEventListener('click', () => { try { require('electron').ipcRenderer.send('restore-main-window'); } catch(e){} });`
+      );
+    } catch {}
+  });
+  miniWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'mouseDown') {
+      if (miniWindow && miniWindow.isVisible()) {
+        try {
+          ipcMain.emit('restore-main-window');
+        } catch (e) {
+          console.warn('[mini restore] failed:', e && e.message);
+        }
+      }
+    }
+  });
 }
 
 function createKeeperWindow() {
@@ -591,8 +832,19 @@ function createKeeperWindow() {
 
 function showMini() {
   if (quitting) return;
-  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) mainWindow.hide();
-  if (miniWindow && !miniWindow.isDestroyed() && !miniWindow.isVisible()) miniWindow.show();
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+    try {
+      mainWindow.hide();
+    } catch {}
+  }
+  if (miniWindow && !miniWindow.isDestroyed()) {
+    if (!miniWindow.isVisible()) {
+      try {
+        miniWindow.show();
+      } catch {}
+    }
+    positionMiniWindow();
+  }
 }
 
 function showMain() {
@@ -624,6 +876,7 @@ function updateZOrder(chatType) {
     wechatMonitor.setZOrder(mainWindow.getNativeWindowHandle(), wechatHWND, chatType);
   } catch {}
 }
+
 function isNearFull(pxRect) {
   if (!pxRect) return false;
   const dip = pxToDipRect(pxRect);
@@ -634,52 +887,34 @@ function isNearFull(pxRect) {
 
 function shouldIgnoreEphemeral(incomingRect) {
   if (!incomingRect || !incomingRect.width || !incomingRect.height) return true;
-  if (!baselineArea || !lastBaselineRect) return false; // 没基线，不过滤
+  if (!baselineArea || !lastBaselineRect) return false;
   const area = incomingRect.width * incomingRect.height;
-  // 基线面积骤减、小宽/小高、并且不是 nearFull
-  const tooSmall =
-    area < baselineArea * 0.45 ||
-    incomingRect.width < 480 ||
-    incomingRect.height < 320;
+  // 只按相对面积过滤“比之前明显小很多”的临时窗口
+  const tooSmall = area < baselineArea * 0.45;
   if (!tooSmall) return false;
-  // 如果刚结束截图的 3 秒过渡期，更严格忽略
   const now = Date.now();
   if (now < ignoreEphemeralUntil) return true;
-  // 非过渡期，只要是骤减/小窗也忽略
   return true;
 }
-// 前台跟随层级
-function startForegroundFollow() {
-  if (fgFollowTimer) clearInterval(fgFollowTimer);
-  fgFollowTimer = setInterval(() => {
-    if (quitting) return;
-    const wasActive = isWechatActive;
-    isWechatActive = computeIsWechatActive();
-    // 只有当微信在前台时才更新层级；不在前台时不动助手
-    if (isWechatActive) {
-      updateZOrder();
-      // 如果刚从后台回到前台且已有目标，立即一次贴靠，避免等待动画慢慢到位
-      if (!wasActive && shouldFollowNow() && lastWechatPxRect) {
-        try {
-          const dockX = computeDockX(lastWechatPxRect, assistWidth);
-          const dip   = pxToDipRect(lastWechatPxRect);
-          const h     = computeAssistantHeightFromWechatRect(lastWechatPxRect);
-          target = { x: dockX, y: dip.y, w: assistWidth, h };
-          applyTargetImmediate();
-        } catch {}
-      }
-    }
-  }, FG_CHECK_INTERVAL);
-}
+
 let lastChatType = null;
 
-// ==== 修改 handleEvent：found / position / foreground / restored / destroyed 的处理 ====
-// 修改：handleEvent 内的立即贴靠调用，加上 shouldFollowNow() 条件
 function handleEvent(evt) {
-  console.log('[evt]', evt.type, 'shot=', screenshotInProgress, 'phase=', screenshotPhase);
   if (quitting) return;
-  const { type, x, y, width, height, hwnd } = evt;
-  const incomingRect = { x, y, width, height };
+  const {
+    type,
+    x,
+    y,
+    width,
+    height,
+    hwnd
+  } = evt;
+  const incomingRect = {
+    x,
+    y,
+    width,
+    height
+  };
 
   switch (type) {
     case 'found': {
@@ -690,12 +925,21 @@ function handleEvent(evt) {
       wechatHWND = hwnd;
       lastWechatPxRect = incomingRect;
       acceptAsBaseline(incomingRect);
+      console.log('[evt:found] set lastWechatPxRect', {
+        rect: lastWechatPxRect,
+        hwnd: wechatHWND
+      });
       const dockX = computeDockX(lastWechatPxRect, assistWidth);
       lastDockX = dockX;
       const dip = pxToDipRect(lastWechatPxRect);
       const h = computeAssistantHeightFromWechatRect(lastWechatPxRect);
-      target = { x: dockX, y: dip.y, w: assistWidth, h };
-      if (shouldFollowNow()) applyTargetImmediate(); // 只有前台时才应用
+      target = {
+        x: dockX,
+        y: dip.y,
+        w: assistWidth,
+        h
+      };
+      if (shouldFollowNow()) applyTargetImmediate();
       firstDirectPosition = true;
       if (!userHidden && isWechatActive) updateZOrder(lastChatType);
       break;
@@ -708,17 +952,28 @@ function handleEvent(evt) {
         wechatFound = true;
         wechatHWND = hwnd;
       }
-      if (freezePosition) { applyFrozen(); break; }
+      if (freezePosition) {
+        applyFrozen();
+        break;
+      }
       if (screenshotPhase === 2 && isNearFull(incomingRect)) break;
       if (shouldIgnoreEphemeral(incomingRect)) break;
-
       lastWechatPxRect = incomingRect;
       acceptAsBaseline(incomingRect);
+      console.log('[evt:position] update lastWechatPxRect', {
+        rect: lastWechatPxRect,
+        hwnd: wechatHWND
+      });
       const dockX = computeDockX(lastWechatPxRect, assistWidth);
       lastDockX = dockX;
       const dip = pxToDipRect(lastWechatPxRect);
       const h = computeAssistantHeightFromWechatRect(lastWechatPxRect);
-      target = { x: dockX, y: dip.y, w: assistWidth, h };
+      target = {
+        x: dockX,
+        y: dip.y,
+        w: assistWidth,
+        h
+      };
       if (!firstDirectPosition && shouldFollowNow()) {
         applyTargetImmediate();
         firstDirectPosition = true;
@@ -727,7 +982,9 @@ function handleEvent(evt) {
       break;
     }
     case 'foreground': {
-      isWechatActive = true; // 前台
+      isWechatActive = true;
+      dockToWechatNow(true);
+      applyTargetImmediate();
       if (screenshotInProgress) {
         screenshotInProgress = false;
         screenshotPhase = 2;
@@ -735,11 +992,15 @@ function handleEvent(evt) {
         screenshotEndedAt = Date.now();
         ignoreEphemeralUntil = screenshotEndedAt + 3000;
         if (lastBaselineRect) {
-          lastWechatPxRect = { ...lastBaselineRect };
+          lastWechatPxRect = {
+            ...lastBaselineRect
+          };
           if (shouldFollowNow()) applyFrozen();
           wechatFound = true;
         } else if (preShotWechatRect) {
-          lastWechatPxRect = { ...preShotWechatRect };
+          lastWechatPxRect = {
+            ...preShotWechatRect
+          };
           acceptAsBaseline(lastWechatPxRect);
           if (shouldFollowNow()) applyFrozen();
           wechatFound = true;
@@ -751,47 +1012,46 @@ function handleEvent(evt) {
       break;
     }
     case 'minimized': {
-      // 最小化时一定视为不在前台
       isWechatActive = false;
       if (screenshotInProgress || freezePosition) break;
       if (!userHidden) showMini();
       break;
     }
-   // 修改 restored 分支：恢复后立即尝试贴靠（强制应用一次）
-   case 'restored': {
-     // 恢复不一定前台，先处理截图态
-     if (screenshotInProgress) {
-       screenshotInProgress = false;
-       screenshotPhase = 2;
-       freezePosition = false;
-       screenshotEndedAt = Date.now();
-       ignoreEphemeralUntil = screenshotEndedAt + 3000;
-       if (lastBaselineRect) {
-         lastWechatPxRect = { ...lastBaselineRect };
-         if (shouldFollowNow()) applyFrozen();
-         wechatFound = true;
-       } else if (preShotWechatRect) {
-         lastWechatPxRect = { ...preShotWechatRect };
-         acceptAsBaseline(lastWechatPxRect);
-         if (shouldFollowNow()) applyFrozen();
-         wechatFound = true;
-       }
-     } else if (screenshotPhase === 2 && Date.now() > ignoreEphemeralUntil) {
-       screenshotPhase = 0;
-     }
-   
-     // 关键：恢复时立刻强制贴靠一次（不用等 position/前台轮询）
-     dockToWechatNow(true);
-     showMain();
-     if (wechatFound) updateZOrder();
-   
-     break;
-   }
+    case 'restored': {
+      isWechatActive = true;
+      if (screenshotInProgress) {
+        screenshotInProgress = false;
+        screenshotPhase = 2;
+        freezePosition = false;
+        screenshotEndedAt = Date.now();
+        ignoreEphemeralUntil = screenshotEndedAt + 3000;
+        if (lastBaselineRect) {
+          lastWechatPxRect = {
+            ...lastBaselineRect
+          };
+          if (shouldFollowNow()) applyFrozen();
+          wechatFound = true;
+        } else if (preShotWechatRect) {
+          lastWechatPxRect = {
+            ...preShotWechatRect
+          };
+          acceptAsBaseline(lastWechatPxRect);
+          if (shouldFollowNow()) applyFrozen();
+          wechatFound = true;
+        }
+      } else if (screenshotPhase === 2 && Date.now() > ignoreEphemeralUntil) {
+        screenshotPhase = 0;
+      }
+      dockToWechatNow(true);
+      applyTargetImmediate();
+      showMain();
+      if (wechatFound) updateZOrder();
+      break;
+    }
     case 'destroyed': {
       const dt = Date.now() - (lastFoundAt || 0);
       if (screenshotInProgress || freezePosition || Date.now() < ignoreEphemeralUntil) break;
       if (dt >= 0 && dt < TRANSIENT_DESTROY_MS) break;
-
       const wmInfo = getWechatWindowViaWM();
       if (wmInfo && wmInfo.rect && wmInfo.rect.width > 300 && wmInfo.rect.height > 300) {
         wechatFound = true;
@@ -802,12 +1062,16 @@ function handleEvent(evt) {
         lastDockX = dockX;
         const dip = pxToDipRect(lastWechatPxRect);
         const h = computeAssistantHeightFromWechatRect(lastWechatPxRect);
-        target = { x: dockX, y: dip.y, w: assistWidth, h };
+        target = {
+          x: dockX,
+          y: dip.y,
+          w: assistWidth,
+          h
+        };
         if (shouldFollowNow()) applyTargetImmediate();
         if (!userHidden && isWechatActive) updateZOrder(lastChatType);
         break;
       }
-      // 真正丢失
       wechatFound = false;
       wechatHWND = null;
       firstDirectPosition = false;
@@ -815,18 +1079,21 @@ function handleEvent(evt) {
     }
   }
 }
+
 function acceptAsBaseline(rect) {
   if (!rect) return;
-  lastBaselineRect = { ...rect };
+  lastBaselineRect = {
+    ...rect
+  };
   baselineArea = rect.width * rect.height;
 }
+
 function startAnimationLoop() {
   if (animationTimer) clearInterval(animationTimer);
   animationTimer = setInterval(() => {
     if (quitting) return;
     if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
-    if (!shouldFollowNow()) return; // 后台或无主窗体时，让用户自由拖动
-
+    if (!shouldFollowNow()) return;
     current.x = lerp(current.x, target.x, LERP_SPEED);
     current.y = lerp(current.y, target.y, LERP_SPEED);
     current.w = assistWidth;
@@ -841,35 +1108,66 @@ function startAnimationLoop() {
     } catch {}
   }, ANIMATION_INTERVAL);
 }
-// ---- 生命周期 ----
-app.whenReady().then(() => {
+
+app.whenReady().then(async () => {
+  try {
+    if (windowManager && windowManager.getWindows) {
+      const wins = windowManager.getWindows() || [];
+      console.log('========== Chat window candidates on startup ==========');
+      wins.forEach((w, idx) => {
+        const type = classifyWindowType(w, 'startup:' + idx);
+        if (!type) return;
+        const b = w.getBounds?.();
+        console.log('[startup-chat]', idx, {
+          type,
+          title: String(w.getTitle?.() || ''),
+          proc: String(w.process?.name || ''),
+          path: String(w.process?.path || ''),
+          bounds: b ? {
+            x: Math.round(b.x),
+            y: Math.round(b.y),
+            width: Math.round(b.width),
+            height: Math.round(b.height)
+          } : null
+        });
+      });
+      console.log('======================================================');
+    }
+  } catch (e) {
+    console.warn('[startup-chat] inspect error:', e.message);
+  }
   createKeeperWindow();
   createMainWindow();
   createMiniWindow();
-
-  // 启动后默认显示助手主窗体（不缩小）
   showMain();
-
   try {
-    wechatMonitor.start({ keywords: ["微信", "企业微信", "Telegram", "WhatsApp"] }, handleEvent);
+    wechatMonitor.start({
+      keywords: ["微信", "企业微信", "Telegram", "WhatsApp", "QQ"]
+    }, handleEvent);
   } catch (e) {
     console.warn('[wechatMonitor] start failed:', e.message);
   }
-
-  // 冷启动：尝试立即找主窗体并贴靠（找到就贴，找不到就保持主窗体前台显示）
   setTimeout(() => {
-    if (computeIsWechatActive()) {
-      if (dockToWechatNow(true) && wechatFound) {
-        updateZOrder();
+    // ★ 仅在已经找到明确的聊天主窗时才尝试贴靠
+    if (wechatFound && lastWechatPxRect && lastWechatPxRect.width > 300 && lastWechatPxRect.height > 300) {
+      if (dockToWechatNow(true)) {
+        if (computeIsWechatActive()) updateZOrder(); // 层级仍只在微信/企业微信前台
       }
+    } else {
+      // 启动阶段未找到聊天窗，不动窗口位置和高度
+      console.log('[startup] no chat window found, skip initial dock');
     }
   }, 200);
-
   startAnimationLoop();
   startForegroundFollow();
+  try {
+    ocr.registerIpc();
+    await ocr.start();
+  } catch (e) {
+    console.warn('[ocr] failed to start:', e && e.message);
+  }
 });
 
-// 崩溃与退出日志（帮助继续排查非预期退出）
 process.on('uncaughtException', (e) => {
   console.error('[uncaughtException]', e && e.stack || e);
 });
@@ -879,6 +1177,9 @@ process.on('unhandledRejection', (r) => {
 app.on('before-quit', (e) => {
   if (!allowQuit) {
     e.preventDefault();
+    try {
+      ocr.stop();
+    } catch {}
     console.log('[before-quit] blocked');
   } else {
     console.log('[before-quit] allowed');
@@ -894,27 +1195,42 @@ ipcMain.handle('set-baidu-ocr-token', (_event, token) => {
   return true;
 });
 
-// 最小化/恢复/退出
 ipcMain.on('close-main-window', () => {
   userHidden = true;
   showMini();
 });
+
+// >>> CHANGED: 使用统一恢复逻辑
 ipcMain.on('restore-main-window', () => {
-  userHidden = false;
-  if (wechatFound) {
-    showMain();
-    updateZOrder();
-  } else showMini();
+  showMain();
+  // 临时置顶与聚焦（保持原行为）
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const wasPinned = pinnedAlwaysOnTop;
+    try {
+      mainWindow.setAlwaysOnTop(true, 'screen-saver');
+      mainWindow.show();
+      mainWindow.focus();
+    } catch {}
+    if (!wasPinned) {
+      setTimeout(() => {
+        try {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.setAlwaysOnTop(false);
+          }
+        } catch {}
+      }, 80);
+    }
+  }
+  restoreDockIfNeeded('ipc');
 });
+
 ipcMain.on('exit-app', () => {
   enableQuit();
   cleanupAndQuit();
 });
 
-// DevTools
 ipcMain.on('devtools:toggle', () => toggleDevTools());
 
-// 顶栏菜单
 ipcMain.on('toolbar:click', async (_e, action) => {
   switch (action) {
     case 'new':
@@ -931,14 +1247,15 @@ ipcMain.on('toolbar:click', async (_e, action) => {
       }
       if (!pinnedAlwaysOnTop) updateZOrder();
       break;
-      // ==== 修改截图开始逻辑（在 toolbar:click 的 'screenshot' 分支替换原来那几行）====
     case 'screenshot': {
       screenshotInProgress = true;
       screenshotPhase = 1;
       freezePosition = true;
-      preShotWechatRect = lastWechatPxRect ? { ...lastWechatPxRect } : null;
-      // 记录当前可信主窗口作为基线
-      if (lastWechatPxRect && (!baselineArea || (lastWechatPxRect.width * lastWechatPxRect.height) >= baselineArea * 0.7)) {
+      preShotWechatRect = lastWechatPxRect ? {
+        ...lastWechatPxRect
+      } : null;
+      if (lastWechatPxRect && (!baselineArea || (lastWechatPxRect.width * lastWechatPxRect.height) >=
+          baselineArea * 0.7)) {
         acceptAsBaseline(lastWechatPxRect);
         const dockX = computeDockX(lastWechatPxRect, assistWidth);
         lastDockX = dockX;
@@ -948,7 +1265,6 @@ ipcMain.on('toolbar:click', async (_e, action) => {
       });
       break;
     }
-
     case 'search':
       mainWindow?.webContents.send('app:search');
       break;
@@ -965,18 +1281,20 @@ ipcMain.on('toolbar:click', async (_e, action) => {
       showAbout();
       break;
     case 'minimize':
+      try {
+        isWechatActive = computeIsWechatActive();
+      } catch {}
       userHidden = true;
       showMini();
       break;
     case 'exit':
       quitting = true;
-      enableQuit(); // NEW
+      enableQuit();
       cleanupAndQuit();
       break;
   }
 });
 
-// 右侧自定义宽度
 ipcMain.handle('window:get-bounds', () => {
   if (!mainWindow || mainWindow.isDestroyed()) return null;
   return mainWindow.getBounds();
@@ -1001,156 +1319,1266 @@ ipcMain.on('window:resize-width', (_e, newWidth) => {
   } catch {}
 });
 
-// 话术粘贴
-ipcMain.on('phrase:paste', async (_e, text) => {
+
+function frontIsQQ() {
   try {
-    if (!text) return;
+    const w = windowManager?.getActiveWindow?.();
+    if (!w) return false;
+    const title = String(w.getTitle?.() || '');
+    const proc = String(w.process?.name || '').replace(/\.exe$/i, '');
+    const path = String(w.process?.path || '');
+    return /(^|\s)QQ(\s|$)|QQNT|QQEX|TIM|腾讯QQ/i.test(title) ||
+      /^(QQ|QQNT|QQEX|TIM)$/i.test(proc) ||
+      /(\\|\/)(Tencent|QQ|QQNT|TIM)(\\|\/)/i.test(path);
+  } catch {
+    return false;
+  }
+}
+
+
+
+function hasQQWindowOpen() {
+  try {
+    const wins = windowManager?.getWindows?.() || [];
+    return wins.some(w => {
+      const t = String(w.getTitle?.() || '');
+      const p = String(w.process?.name || '').replace(/\.exe$/i, '');
+      return /(^|\s)QQ(\s|$)|QQNT|QQEX|TIM|腾讯QQ/i.test(t) || /^(QQ|QQNT|QQEX|TIM)$/i.test(p);
+    });
+  } catch {
+    return false;
+  }
+}
+
+function hasWeChatWindowOpen() {
+  try {
+    const wins = windowManager?.getWindows?.() || [];
+    return wins.some(w => {
+      const t = String(w.getTitle?.() || '');
+      const p = String(w.process?.name || '').replace(/\.exe$/i, '');
+      return /企业微信|wxwork|wecom/i.test(t) ||
+        /^(WXWork|WeCom|WeChatAppEx|WXWorkWeb|WeMail|WXDrive)$/i.test(p) ||
+        /微信|wechat|weixin/i.test(t) ||
+        /^(WeChat|Weixin|WeChatAppEx)$/i.test(p);
+    });
+  } catch {
+    return false;
+  }
+}
+// 新增：判断窗口是否为助手（排除助手）
+function isAssistantWindow(win) {
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    const ab = win?.getBounds?.();
+    const aw = mainWindow.getBounds();
+    if (!ab || !aw) return false;
+    const sameSize = Math.abs(ab.width - aw.width) <= 4 && Math.abs(ab.height - aw.height) <= 4;
+    const t = String(win.getTitle?.() || '');
+    return sameSize && !/(qq|wechat|wecom|wxwork)/i.test(t);
+  } catch {
+    return false;
+  }
+}
+
+// 新增：窗口类型识别
+// 是否打印 classifyWindowType 的详细日志
+const LOG_CLASSIFY = true;
+
+// 新增：窗口类型识别（qq / wechat / enterprise / null），带可控日志
+function classifyWindowType(win, tag = '') {
+  try {
+    if (!win) {
+      return null;
+    }
+    const title = String(win.getTitle?.() || '');
+    const procRaw = String(win.process?.name || '');
+    const proc = procRaw.replace(/\.exe$/i, '');
+    const path = String(win.process?.path || '');
+    let type = null;
+
+    if (/(^|\s)QQ(\s|$)|QQNT|QQEX|TIM|腾讯QQ/i.test(title) ||
+      /^(QQ|QQNT|QQEX|TIM)$/i.test(proc) ||
+      /(\\|\/)(Tencent|QQ|QQNT|TIM)(\\|\/)/i.test(path)) {
+      type = 'qq';
+    } else if (/企业微信|wxwork|wecom/i.test(title) ||
+      /^(WXWork|WeCom|WeChatAppEx|WXWorkWeb|WeMail|WXDrive)$/i.test(proc) ||
+      /wxwork|wecom/i.test(path)) {
+      type = 'enterprise';
+    } else if (/微信|wechat|weixin/i.test(title) ||
+      /^(WeChat|Weixin|WeChatAppEx)$/i.test(proc)) {
+      type = 'wechat';
+    } else {
+      type = null;
+    }
+
+
+    return type;
+  } catch (e) {
+    console.warn('[classify] error:', e.message);
+    return null;
+  }
+}
+
+// 新增：矩形近似
+function rectClose(a, b, tol = 24) {
+  try {
+    if (!a || !b) return false;
+    return Math.abs(a.x - b.x) <= tol &&
+      Math.abs(a.y - b.y) <= tol &&
+      Math.abs(a.width - b.width) <= tol &&
+      Math.abs(a.height - b.height) <= tol;
+  } catch {
+    return false;
+  }
+}
+
+// 新增：聚焦（支持 win 或 handle）
+function focusWindow(targetWinOrHandle) {
+  try {
+    if (!windowManager || !windowManager.getWindows) return false;
+    let win = null;
+    if (typeof targetWinOrHandle === 'object' && targetWinOrHandle) {
+      win = targetWinOrHandle;
+    } else {
+      const handle = Number(targetWinOrHandle);
+      if (!handle) return false;
+      const wins = windowManager.getWindows() || [];
+      win = wins.find(w => Number(w.handle) === handle) || null;
+    }
+    if (!win) return false;
+    try {
+      win.bringToTop && win.bringToTop();
+    } catch {}
+    try {
+      win.focus && win.focus();
+    } catch {}
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// 替换：解析吸附目标，直接返回 win
+// 1) 过滤小矩形并稳定解析目标
+function isChatMainBounds(bb) {
+  try {
+    if (!bb || !isFinite(bb.x) || !isFinite(bb.y) || !isFinite(bb.width) || !isFinite(bb.height)) return false;
+    // ★ 不再用 width/height 过滤，单纯认为：任何有正常矩形的 qq/微信/企微主进程窗口都是候选
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveDockedChatTarget() {
+  try {
+    if (!windowManager || !windowManager.getActiveWindow) {
+      console.warn('[dockTarget] skip: windowManager unavailable');
+      return null;
+    }
+
+    // 1. 前台优先：当前前台是聊天窗就直接用它
+    const active = windowManager.getActiveWindow();
+    if (active) {
+      const type = classifyWindowType(active);
+      const bb = active.getBounds?.();
+      if ((type === 'qq' || type === 'wechat' || type === 'enterprise') && isChatMainBounds(bb)) {
+        const rect = {
+          x: Math.round(bb.x),
+          y: Math.round(bb.y),
+          width: Math.round(bb.width),
+          height: Math.round(bb.height)
+        };
+        const hwnd = Number(active.handle) || NaN;
+        lastWechatPxRect = rect;
+        acceptAsBaseline(rect);
+        console.log('[dockTarget] use active chat ->', {
+          type,
+          hwnd,
+          rect
+        });
+        return {
+          type,
+          hwnd,
+          rect,
+          win: active
+        };
+      }
+    }
+
+    // 2. 兜底：在所有窗口中找任一聊天窗（不按优先级，只要识别到就是）
+    const wins = windowManager.getWindows?.() || [];
+    for (const w of wins) {
+      const t = classifyWindowType(w);
+      if (t !== 'qq' && t !== 'wechat' && t !== 'enterprise') continue;
+      const bb = w.getBounds?.();
+      if (!isChatMainBounds(bb)) continue;
+
+      const rect = {
+        x: Math.round(bb.x),
+        y: Math.round(bb.y),
+        width: Math.round(bb.width),
+        height: Math.round(bb.height)
+      };
+      const hwnd = Number(w.handle) || NaN;
+
+      console.log('[dockTarget] fallback ->', {
+        type: t,
+        hwnd,
+        rect
+      });
+      return {
+        type: t,
+        hwnd,
+        rect,
+        win: w
+      };
+    }
+
+    console.warn('[dockTarget] no chat window found');
+    return null;
+  } catch (e) {
+    console.warn('[dockTarget] error:', e && e.message);
+    return null;
+  }
+}
+// 新增：将吸附目标置前（多策略），并返回是否成功
+function bringDockedTargetToFront(target) {
+  try {
+    if (!target) return false;
+
+    let ok = false;
+
+    // 优先使用窗口对象
+    if (target.win) {
+      try {
+        target.win.bringToTop && target.win.bringToTop();
+      } catch {}
+      try {
+        target.win.focus && target.win.focus();
+        ok = true;
+      } catch {}
+    }
+
+    // 句柄兜底
+    if (!ok && isFinite(target.hwnd)) {
+      ok = focusWindow(target.hwnd);
+    }
+
+    // 类型兜底
+    if (!ok) {
+      if (target.type === 'enterprise' || target.type === 'wechat') {
+        try {
+          focusWeChatWindow();
+          ok = true;
+        } catch {}
+      } else if (target.type === 'qq') {
+        try {
+          ok = focusQQMainWindow();
+        } catch {}
+      }
+    }
+
+    // 关键：只让助手失焦，不隐藏，不改置顶，避免闪烁
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.blur();
+    } catch {}
+
+    return !!ok;
+  } catch (e) {
+    console.warn('[bringDockedTargetToFront] error:', e && e.message);
+    return false;
+  }
+}
+// 将 QQ 放前台并确保输入框焦点（仅在 qq-focus-paste.exe 失败时使用）
+async function bringQQFrontAndFocusInput() {
+  // 把 QQ 主窗置前
+  let okFront = false;
+  try {
+    okFront = frontIsQQ();
+  } catch {}
+  if (!okFront) {
+    try {
+      okFront = focusQQMainWindow();
+    } catch {}
+    await sleep(140);
+  }
+  // 焦点序列：Tab x3 + Shift+Tab 兜底
+  try {
+    sendKeys.sendTab && sendKeys.sendTab();
+  } catch {}
+  await sleep(90);
+  try {
+    sendKeys.sendTab && sendKeys.sendTab();
+  } catch {}
+  await sleep(90);
+  try {
+    sendKeys.sendTab && sendKeys.sendTab();
+  } catch {}
+  await sleep(120);
+  // 部分主题需要多一次
+  try {
+    sendKeys.sendTab && sendKeys.sendTab();
+  } catch {}
+  await sleep(100);
+  // 兜底回退一格
+  try {
+    sendKeys.sendShiftTab && sendKeys.sendShiftTab();
+  } catch {}
+  await sleep(100);
+}
+// 小兜底：把目标窗体放前台（你已有 bringDockedTargetToFront，可直接用）
+// 这里在调用前轻微失焦助手，避免两者一起下沉
+// 修正：前台确认，优先使用 target.win；避免 hwnd 为 NaN 时失败
+async function ensureTargetForeground(target) {
+  // 不主动 blur，先把目标置前
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  let ok = false;
+  try {
+    if (target?.win) {
+      try {
+        target.win.bringToTop && target.win.bringToTop();
+      } catch {}
+      try {
+        target.win.focus && target.win.focus();
+        ok = true;
+      } catch {}
+    }
+    if (!ok && isFinite(target?.hwnd)) {
+      ok = focusWindow(target.hwnd);
+    }
+    if (!ok) {
+      // 类型兜底
+      if (target?.type === 'qq') ok = !!focusQQMainWindow();
+      else if (target?.type === 'wechat' || target?.type === 'enterprise') {
+        try {
+          focusWeChatWindow();
+          ok = true;
+        } catch {}
+      }
+    }
+  } catch {}
+  await sleep(140);
+  return !!ok;
+}
+// 新增：轻量前台确认（用于qq超时后判断是否已置前成功）
+function isForegroundType(type) {
+  try {
+    if (!windowManager || !windowManager.getActiveWindow) return false;
+    const w = windowManager.getActiveWindow();
+    const t = classifyWindowType(w);
+    return t === type;
+  } catch {
+    return false;
+  }
+}
+// 单击插入（只粘贴）
+// 单击：只粘贴
+// 单击：只粘贴（统一兼容 QQ / 微信 / 企业微信）
+// 单击：只粘贴（严格避免 QQ 重复）
+// 3) 单击/双击插入：稳定前台、避免 QQ 回退重复
+// 单击插入：始终以当前前台聊天窗为准
+ipcMain.on('phrase:paste', async (_e, text) => {
+  if (!text) return;
+  if (!canStartInsert()) return;
+
+  try {
     clipboard.writeText(String(text));
-    focusWeChatWindow();
-    setTimeout(() => {
+
+    // 前台优先，其次兜底历史吸附
+    let target = getForegroundChatTarget() || resolveDockedChatTarget?.();
+    if (!target || !target.type) return;
+
+    if (target.type === 'qq') {
+      // 1) 把 QQ 放前台（简单版）
+      await ensureQQForegroundSimple();
+
+      // 2) 尝试使用 qq-focus-paste.exe 加速（可选）
+      let okExe = false;
+      try {
+        okExe = await runQqFocusPaste('paste');
+      } catch {}
+
+      // 3) 无论 exe 成功与否，都在短延时后兜底一次 Ctrl+V
+      await sleep(80);
       try {
         sendKeys.sendCtrlV();
       } catch {}
-      if (!pinnedAlwaysOnTop) updateZOrder();
-    }, 120);
+
+    } else {
+      // 微信 / 企业微信：只要当前目标窗体前台，直接 Ctrl+V
+      await ensureTargetForeground(target);
+      try {
+        sendKeys.sendCtrlV();
+      } catch {}
+    }
+
+    setTimeout(() => {
+      if (!pinnedAlwaysOnTop) updateZOrder(target.type);
+    }, 140);
   } catch (err) {
     console.error('phrase paste failed:', err);
+  } finally {
+    endInsert();
   }
 });
-
-// 话术粘贴并发送
 ipcMain.on('phrase:paste-send', async (_e, text) => {
+  if (!text) return;
+  if (!canStartInsert()) return;
+
   try {
-    if (!text) return;
-    if (!canSendNow()) {
-          console.log('[paste-send] skipped: wechat not foreground or not docked');
-          return;
-        }
     clipboard.writeText(String(text));
-    focusWeChatWindow();
-    setTimeout(() => {
+
+    let target = getForegroundChatTarget() || resolveDockedChatTarget?.();
+    if (!target || !target.type) return;
+
+    if (target.type === 'qq') {
+      // 1) 把 QQ 放前台（简单版）
+      await ensureQQForegroundSimple();
+
+      // 2) 尝试使用 qq-focus-paste.exe
+      let okExe = false;
+      try {
+        okExe = await runQqFocusPaste('paste-send');
+      } catch {}
+
+      // 3) 兜底逻辑：Ctrl+V + Enter
+      //    即使 exe 已经发过一次，也不太会有大问题，最多重复一次发送
+      await sleep(80);
       try {
         sendKeys.sendCtrlV();
       } catch {}
-      setTimeout(() => {
-        try {
-          sendKeys.sendEnter();
-        } catch {}
-        if (!pinnedAlwaysOnTop) updateZOrder();
-      }, 80);
-    }, 120);
+
+      await sleep(110);
+      try {
+        sendKeys.sendEnter();
+      } catch {}
+
+    } else {
+      // 微信 / 企业微信
+      await ensureTargetForeground(target);
+      try {
+        sendKeys.sendCtrlV();
+      } catch {}
+      await sleep(100);
+      try {
+        sendKeys.sendEnter();
+      } catch {}
+    }
+
+    setTimeout(() => {
+      if (!pinnedAlwaysOnTop) updateZOrder(target.type);
+    }, 160);
   } catch (err) {
     console.error('phrase paste-send failed:', err);
+  } finally {
+    endInsert();
   }
 });
+// 2) 插入互斥与节流，避免重复触发
+let insertBusy = false;
+let lastInsertAt = 0;
+const INSERT_DEBOUNCE_MS = 220;
 
-// === Emoji 图片粘贴（单击：粘贴；双击：粘贴并发送） ===
+function canStartInsert() {
+  const now = Date.now();
+  if (insertBusy) return false;
+  if (now - lastInsertAt < INSERT_DEBOUNCE_MS) return false;
+  lastInsertAt = now;
+  insertBusy = true;
+  return true;
+}
+async function ensureQQForegroundSimple() {
+  try {
+    // 如果当前已经是 QQ，就不用再切一次
+    if (isActiveQQ && isActiveQQ()) {
+      await sleep(80);
+      return true;
+    }
+  } catch {}
+  // 否则尝试聚焦 QQ 主窗
+  let ok = false;
+  try {
+    ok = focusQQMainWindow();
+  } catch {}
+  await sleep(140);
+  return ok;
+}
+
+function endInsert() {
+  insertBusy = false;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+// 新增：获取当前前台的聊天窗口（QQ/微信/企业微信），只看最上层
+// 获取当前前台的聊天窗口（QQ/微信/企业微信），只看最上层，不再用尺寸判断
+function getForegroundChatTarget() {
+  try {
+    if (!windowManager || !windowManager.getActiveWindow) return null;
+    const active = windowManager.getActiveWindow();
+    if (!active) return null;
+
+    const type = classifyWindowType(active);
+    if (type !== 'qq' && type !== 'wechat' && type !== 'enterprise') return null;
+
+    const bb = active.getBounds?.();
+    const hasRect =
+      bb &&
+      isFinite(bb.x) && isFinite(bb.y) &&
+      isFinite(bb.width) && isFinite(bb.height);
+
+    if (!hasRect) return null;
+
+    const rect = {
+      x: Math.round(bb.x),
+      y: Math.round(bb.y),
+      width: Math.round(bb.width),
+      height: Math.round(bb.height)
+    };
+    const hwnd = Number(active.handle) || NaN;
+
+    // 记录最新基准，用于后续吸附和兜底
+    try {
+      lastWechatPxRect = rect;
+      acceptAsBaseline(rect);
+    } catch {}
+
+    return {
+      type,
+      hwnd,
+      rect,
+      win: active
+    };
+  } catch {
+    return null;
+  }
+}
+let lastFgLogAt = 0; // 放在 fgFollowTimer 旁边即可
+const FG_CHATTYPE_LOG_INTERVAL = 10000; // 10 秒
+function startForegroundFollow() {
+  if (fgFollowTimer) clearInterval(fgFollowTimer);
+  fgFollowTimer = setInterval(() => {
+    if (quitting) return;
+
+    const wasActive = isWechatActive;
+    isWechatActive = computeIsWechatActive();
+
+    if (wasActive !== isWechatActive) {
+      console.log('[fgFollow] isWechatActive ->', isWechatActive);
+    }
+
+    // 每 10 秒最多打一次“当前前台类型”的日志
+    try {
+      const now = Date.now();
+      if (now - lastFgLogAt >= FG_CHATTYPE_LOG_INTERVAL) {
+        lastFgLogAt = now;
+        if (windowManager && windowManager.getActiveWindow) {
+          const active = windowManager.getActiveWindow();
+          const t = classifyWindowType(active, 'fgFollow:active');
+          if (t) {
+            console.log('[fgFollow] active chatType =', t);
+          } else {
+            console.log('[fgFollow] active chatType =', t, '(non-chat)');
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[fgFollow] active inspect error:', e.message);
+    }
+
+    if (isWechatActive) {
+      // 只维护层级，不再在这里改位置/高度
+      updateZOrder();
+    }
+  }, FG_CHECK_INTERVAL);
+}
+
+function dockToWechatNow(force = false) {
+  try {
+    let rect = lastWechatPxRect;
+    if (!rect) {
+      const info = getWechatWindowViaWM();
+      if (info && info.rect && info.rect.width > 300 && info.rect.height > 300) {
+        wechatFound = true;
+        wechatHWND = info.hwnd || wechatHWND;
+        rect = info.rect;
+        lastWechatPxRect = rect;
+        acceptAsBaseline(rect);
+        console.log('[dock] getWechatWindowViaWM used', {
+          rect,
+          hwnd: info.hwnd
+        });
+      }
+    }
+    if (!rect || !rect.width || !rect.height) {
+      console.log('[dock] skip: no valid rect');
+      return false;
+    }
+
+    // 新增：调用前打印一下当前 rect
+    console.log('[dock] using lastWechatPxRect', {
+      rect,
+      hwnd: wechatHWND
+    });
+
+    const dockX = computeDockX(rect, assistWidth);
+    lastDockX = dockX;
+    const dip = pxToDipRect(rect);
+    const h = computeAssistantHeightFromWechatRect(rect);
+    target = {
+      x: dockX,
+      y: dip.y,
+      w: assistWidth,
+      h
+    };
+    if (force || shouldFollowNow()) applyTargetImmediate();
+    return true;
+  } catch (e) {
+    console.warn('[dock] error', e && e.message);
+    return false;
+  }
+}
+
+function getCurrentChatTarget() {
+  try {
+    return getForegroundChatTarget() || resolveDockedChatTarget?.() || null;
+  } catch {
+    return null;
+  }
+}
+
+function isActiveQQ() {
+  try {
+    if (!windowManager || !windowManager.getActiveWindow) {
+      console.log('[isActiveQQ] windowManager missing');
+      return false;
+    }
+    const active = windowManager.getActiveWindow();
+    if (!active) {
+      console.log('[isActiveQQ] no active');
+      return false;
+    }
+
+    const titleRaw = active.getTitle?.();
+    const procRaw = active.process?.name || '';
+    const pathRaw = active.process?.path || '';
+    const b = active.getBounds?.();
+    const rectOk = b && isFinite(b.x) && isFinite(b.y) && isFinite(b.width) && isFinite(b.height);
+    const rect = rectOk ? {
+      x: Math.round(b.x),
+      y: Math.round(b.y),
+      width: Math.round(b.width),
+      height: Math.round(b.height)
+    } : null;
+
+    const title = String(titleRaw || '').trim();
+    const procName = String(procRaw || '').replace(/\.exe$/i, '');
+    const procPath = String(pathRaw || '');
+
+    const qqTitleRe = /(^|\s)qq(\s|$)|qqnt|qqex|tim|腾讯qq/i;
+    const qqProcRe = /^(QQ|QQNT|QQEX|TIM)$/i;
+    const qqPathRe = /(\\|\/)(Tencent|QQ|QQNT|TIM)(\\|\/)/i;
+
+    // 仅以活动窗口判断当前是否 QQ
+    const ok = qqTitleRe.test(title) || qqProcRe.test(procName) || qqPathRe.test(procPath);
+
+    console.log('[isActiveQQ:active]', {
+      title,
+      procName,
+      procPath,
+      rect,
+      ok
+    });
+
+    // 只打印候选用于调试，不改变 ok
+    if (!ok && windowManager.getWindows) {
+      const wins = windowManager.getWindows() || [];
+      const candidates = wins
+        .map(w => {
+          const bt = w.getBounds?.();
+          return {
+            title: String(w.getTitle?.() || '').trim(),
+            proc: String(w.process?.name || ''),
+            path: String(w.process?.path || ''),
+            bounds: bt ? {
+              x: Math.round(bt.x),
+              y: Math.round(bt.y),
+              width: Math.round(bt.width),
+              height: Math.round(bt.height)
+            } : null
+          };
+        })
+        .filter(info => {
+          const t = info.title;
+          const p = info.proc.replace(/\.exe$/i, '');
+          return /(^|\s)QQ(\s|$)|QQNT|QQEX|TIM|腾讯QQ/i.test(t) || /^(QQ|QQNT|QQEX|TIM)$/i.test(p);
+        });
+      console.log('[isActiveQQ:candidates]', candidates);
+    }
+
+    console.log('[isActiveQQ:final]', {
+      ok
+    });
+    return ok;
+  } catch (e) {
+    console.warn('[isActiveQQ] error:', e.message);
+    return false;
+  }
+}
 const https = require('https');
 const http = require('http');
-const path = require('path');
-const fs = require('fs');
+
+function locateQqFocusHelper() {
+  try {
+    if (app.isPackaged) {
+      // 常见打包路径
+      const p1 = path.join(process.resourcesPath, 'qq-focus-paste.exe');
+      if (fs.existsSync(p1)) return p1;
+      const p2 = path.join(process.resourcesPath, 'app.asar.unpacked', 'main', 'qq-focus-paste.exe');
+      if (fs.existsSync(p2)) return p2;
+      const p3 = path.join(process.resourcesPath, 'extra', 'qq-focus-paste.exe');
+      if (fs.existsSync(p3)) return p3;
+      return null;
+    } else {
+      // 开发模式：main 目录
+      const local = path.join(__dirname, 'qq-focus-paste.exe');
+      if (fs.existsSync(local)) return local;
+      return null;
+    }
+  } catch (e) {
+    console.warn('[qqpaste] locate helper fail:', e.message);
+    return null;
+  }
+}
+
+function ensureQqFocusHelperReady() {
+  if (qqFocusHelperPath && fs.existsSync(qqFocusHelperPath)) return true;
+  qqFocusHelperPath = locateQqFocusHelper();
+  console.log('[qqpaste] helper path:', qqFocusHelperPath || '(missing)');
+  return !!qqFocusHelperPath;
+}
+
+/**
+ * 运行 qq-focus-paste.exe
+ * mode: 'paste' | 'paste-send'
+ * 返回 true 表示执行成功，false 表示未找到/执行失败（将触发 Ctrl+V/Enter 回退）
+ */
+function runQqFocusPaste(mode) {
+  if (!ensureQqFocusHelperReady()) {
+    console.warn('[qqpaste] helper missing');
+    return false;
+  }
+  try {
+    const {
+      spawn
+    } = require('child_process');
+    return new Promise((resolve) => {
+      let resolved = false;
+      const proc = spawn(qqFocusHelperPath, [String(mode || 'paste')], {
+        windowsHide: true
+      });
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          try {
+            proc.kill('SIGTERM');
+          } catch {}
+          console.warn('[qqpaste] timeout -> fallback');
+          resolve(false);
+        }
+      }, 180); // 给最多 ~180ms，超时立即回退
+
+      proc.on('exit', (code) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
+        if (code === 0) resolve(true);
+        else {
+          console.warn('[qqpaste] exit code', code, '-> fallback');
+          resolve(false);
+        }
+      });
+      proc.on('error', (err) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
+        console.warn('[qqpaste] spawn error:', err && err.message);
+        resolve(false);
+      });
+    });
+  } catch (e) {
+    console.warn('[qqpaste] run error:', e.message);
+    return false;
+  }
+}
 
 function isRemoteImage(src) {
   return /^https?:\/\//i.test(src);
 }
+
 function normalizeLocalPath(p) {
   if (!p) return '';
-  // 去掉 file:/// 前缀
   if (/^file:\/\//i.test(p)) {
     return decodeURI(p.replace(/^file:\/+/, ''));
   }
   return p;
 }
-function downloadToBuffer(url) {
+
+
+// === 新增：可跟随重定向下载（最多 5 次），返回 Buffer + 最终扩展名 ===
+const {
+  URL
+} = require('url');
+
+function downloadWithRedirect(url, depth = 0) {
   return new Promise((resolve, reject) => {
-    const lib = url.startsWith('https') ? https : http;
-    lib.get(url, (res) => {
-      if (res.statusCode !== 200) {
-        reject(new Error('HTTP ' + res.statusCode));
-        return;
-      }
-      const chunks = [];
-      res.on('data', c => chunks.push(c));
-      res.on('end', () => resolve(Buffer.concat(chunks)));
-    }).on('error', reject);
+    if (depth > 5) {
+      return reject(new Error('Too many redirects'));
+    }
+    try {
+      const u = new URL(url);
+      const lib = u.protocol === 'https:' ? require('https') : require('http');
+      const req = lib.get({
+        hostname: u.hostname,
+        path: u.pathname + u.search,
+        port: u.port || (u.protocol === 'https:' ? 443 : 80),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) EmojiDownloader/1.0',
+          'Accept': 'image/*,*/*;q=0.8'
+        },
+        timeout: 15000
+      }, (res) => {
+        // 重定向
+        if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
+          const loc = res.headers.location;
+          if (!loc) return reject(new Error('Redirect without location'));
+          const nextUrl = loc.startsWith('http') ? loc : (u.origin + loc);
+          res.resume();
+          return resolve(downloadWithRedirect(nextUrl, depth + 1));
+        }
+        if (res.statusCode !== 200) {
+          res.resume();
+          return reject(new Error('HTTP ' + res.statusCode));
+        }
+        const ct = (res.headers['content-type'] || '').toLowerCase();
+        const chunks = [];
+        res.on('data', c => chunks.push(c));
+        res.on('end', () => {
+          const buf = Buffer.concat(chunks);
+          // 推测扩展名
+          let ext = '';
+          if (/png/.test(ct)) ext = '.png';
+          else if (/jpe?g/.test(ct)) ext = '.jpg';
+          else if (/gif/.test(ct)) ext = '.gif';
+          else if (/webp/.test(ct)) ext = '.webp';
+          else if (/bmp/.test(ct)) ext = '.bmp';
+          else if (/svg/.test(ct)) ext = '.svg';
+          resolve({
+            buffer: buf,
+            ext
+          });
+        });
+      });
+      req.on('error', reject);
+    } catch (err) {
+      reject(err);
+    }
   });
 }
-
-async function putImageToClipboard(src) {
-  // 返回 { type: 'image' | 'text' | 'fail' }
+async function ensureImageInClipboard(buffer, ext) {
+  const tmpDir = os.tmpdir();
+  const normExt = ext ? ext.toLowerCase() : '';
+  // 统一 jpg/jpeg => jpg
+  const finalExt = normExt === 'jpeg' ? 'jpg' : normExt || 'png';
+  const tmpPath = require('path').join(
+    tmpDir,
+    'emoji_' + Date.now() + '_' + Math.random().toString(16).slice(2) + '.' + finalExt
+  );
   try {
-    if (isRemoteImage(src)) {
-      // 远端：下载
-      const buf = await downloadToBuffer(src);
-      const img = nativeImage.createFromBuffer(buf);
-      if (!img || (img.isEmpty && img.isEmpty())) {
-        clipboard.writeText(src);
-        return { type: 'text' };
+    require('fs').writeFileSync(tmpPath, buffer);
+  } catch (e) {
+    console.warn('[ensureImageInClipboard] write temp fail, fallback createFromBuffer:', e.message);
+  }
+
+  let img = nativeImage.createFromPath(tmpPath);
+  if (!img || (img.isEmpty && img.isEmpty())) {
+    // 尝试直接 buffer
+    img = nativeImage.createFromBuffer(buffer);
+  }
+
+  if (img && !(img.isEmpty && img.isEmpty())) {
+    clipboard.writeImage(img);
+    return {
+      type: 'image',
+      path: tmpPath,
+      ext: finalExt
+    };
+  }
+
+  // 转换为 PNG（需要 sharp，可选）
+  try {
+    const sharp = require('sharp');
+    const pngBuf = await sharp(buffer).png().toBuffer();
+    const pngPath = require('path').join(
+      tmpDir,
+      'emoji_' + Date.now() + '_' + Math.random().toString(16).slice(2) + '.png'
+    );
+    require('fs').writeFileSync(pngPath, pngBuf);
+    let pngImg = nativeImage.createFromPath(pngPath);
+    if (!pngImg || (pngImg.isEmpty && pngImg.isEmpty())) {
+      pngImg = nativeImage.createFromBuffer(pngBuf);
+    }
+    if (pngImg && !(pngImg.isEmpty && pngImg.isEmpty())) {
+      clipboard.writeImage(pngImg);
+      return {
+        type: 'image',
+        path: pngPath,
+        ext: 'png',
+        converted: true
+      };
+    }
+  } catch (convErr) {
+    console.warn('[ensureImageInClipboard] PNG convert fail (sharp missing or error):', convErr.message);
+  }
+
+  return {
+    type: 'fail'
+  };
+}
+
+function detectImageExtByMagic(buf) {
+  if (!buf || buf.length < 12) return '';
+  // PNG
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'png';
+  // JPG
+  if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'jpg';
+  // GIF
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return 'gif';
+  // WEBP (RIFF....WEBP)
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+    buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'webp';
+  // BMP
+  if (buf[0] === 0x42 && buf[1] === 0x4D) return 'bmp';
+  return '';
+}
+
+// === 是否远程图片 ===
+function isRemoteImage(src) {
+  return /^https?:\/\//i.test(src);
+}
+
+function normalizeLocalPath(p) {
+  return /^file:\/\//i.test(p) ? decodeURI(p.replace(/^file:\/+/, '')) : p;
+}
+
+// === 修改：putImageToClipboard 逻辑 ===
+// 改进的 putImageToClipboard：全面识别、支持 gif/jpg/jpeg/png/webp/bmp
+// putImageToClipboard 片段（仅 GIF 分支&失败回退处）
+// ===== 替换 putImageToClipboard 中 GIF 分支与失败回退部分 =====
+async function putImageToClipboard(src) {
+  try {
+    const isRemote = isRemoteImage(src);
+    if (isRemote) {
+      const result = await downloadWithRedirect(src).catch(e => {
+        console.warn('[putImage] download fail:', e.message);
+        return null;
+      });
+      if (!result || !result.buffer || result.buffer.length < 64) {
+        // 远程彻底失败：回退静态（不发地址）
+        return {
+          type: 'fallback-static',
+          reason: 'download-fail'
+        };
       }
-      clipboard.writeImage(img);
-      return { type: 'image' };
+      let ext = '';
+      const ct = (result.ext || '').toLowerCase();
+      if (/gif/.test(ct)) ext = 'gif';
+      else if (/png/.test(ct)) ext = 'png';
+      else if (/jpe?g/.test(ct)) ext = 'jpg';
+      else if (/webp/.test(ct)) ext = 'webp';
+      else if (/bmp/.test(ct)) ext = 'bmp';
+      if (!ext) {
+        const m = src.match(/\.(png|jpe?g|gif|webp|bmp)(?:\?|#|$)/i);
+        if (m) ext = m[1].toLowerCase();
+      }
+      if (!ext) ext = detectImageExtByMagic(result.buffer) || 'png';
+
+      if (ext === 'gif') {
+        ensureGifStoreDir();
+        // 始终使用安全随机名，避免 URL 异常字符
+        let fname = safeRandomGifName();
+        fname = sanitizeFilename(fname);
+        let full = path.join(gifStoreDir, fname);
+        let wrote = false;
+        try {
+          fs.writeFileSync(full, result.buffer);
+          wrote = true;
+        } catch (e1) {
+          console.warn('[putImage] write gif primary fail:', e1.message);
+          // 回退到 os.tmpdir 再试一次
+          try {
+            const tmpFull = path.join(os.tmpdir(), safeRandomGifName());
+            fs.writeFileSync(tmpFull, result.buffer);
+            full = tmpFull;
+            wrote = true;
+            console.log('[putImage] gif wrote to tmp fallback');
+          } catch (e2) {
+            console.warn('[putImage] write gif fallback fail:', e2.message);
+            // 最终失败 → 回退静态
+            return {
+              type: 'fallback-static',
+              reason: 'gif-write-fail'
+            };
+          }
+        }
+        if (wrote) {
+          return {
+            type: 'gif-file',
+            path: full,
+            animated: true
+          };
+        }
+      }
+
+      // 非 GIF
+      const placed = await ensureImageInClipboard(result.buffer, ext);
+      if (placed.type === 'image') return placed;
+      // 位图失败，回退文本（仅非 GIF）
+      clipboard.writeText(src);
+      return {
+        type: 'text'
+      };
     } else {
       // 本地
       const local = normalizeLocalPath(src);
       if (!local || !fs.existsSync(local)) {
-        clipboard.writeText(src);
-        return { type: 'text' };
+        return {
+          type: 'fail'
+        };
+      }
+      const ext = (local.match(/\.(png|jpe?g|gif|webp|bmp)$/i)?.[1] || '').toLowerCase();
+      if (ext === 'gif') {
+        return {
+          type: 'gif-file',
+          path: local,
+          animated: true
+        };
+      }
+      let buf = null;
+      try {
+        buf = fs.readFileSync(local);
+      } catch (e) {
+        console.warn('[putImage] read local fail:', e.message);
+      }
+      if (buf && buf.length > 64) {
+        const realExt = ext || detectImageExtByMagic(buf) || 'png';
+        const placed = await ensureImageInClipboard(buf, realExt);
+        if (placed.type === 'image') return placed;
       }
       const img = nativeImage.createFromPath(local);
-      if (!img || (img.isEmpty && img.isEmpty())) {
-        clipboard.writeText(src);
-        return { type: 'text' };
+      if (img && !(img.isEmpty && img.isEmpty())) {
+        clipboard.writeImage(img);
+        return {
+          type: 'image',
+          path: local
+        };
       }
-      clipboard.writeImage(img);
-      return { type: 'image' };
+      return {
+        type: 'fail'
+      };
     }
   } catch (err) {
-    console.warn('putImageToClipboard fail:', err.message);
-    clipboard.writeText(src);
-    return { type: 'text' };
+    console.warn('[putImageToClipboard] unexpected fail:', err.message);
+    return {
+      type: 'fail'
+    };
   }
 }
-
+let lastGifPasteAt = 0;
+const GIF_PASTE_THROTTLE_MS = 600;
+// pasteEmojiInternal 片段（仅 GIF 分支与延时）
 function pasteEmojiInternal(src, sendNow) {
   if (!src) return;
-  if (!canSendNow()) {
-        console.log('[paste-send] skipped: wechat not foreground or not docked');
-        return;
-      }
   (async () => {
     const result = await putImageToClipboard(src);
-    focusWeChatWindow();
-    setTimeout(() => {
-      try { sendKeys.sendCtrlV(); } catch {}
-      if (sendNow) {
-        setTimeout(() => {
-          try { sendKeys.sendEnter(); } catch {}
-          if (!pinnedAlwaysOnTop) updateZOrder();
-        }, 90);
-      } else {
-        if (!pinnedAlwaysOnTop) updateZOrder();
+
+    // 节流：短时间多次 GIF 请求只允许一次，防止重复插入或写文件竞争
+    if (result.type === 'gif-file') {
+      const now = Date.now();
+      if (now - lastGifPasteAt < GIF_PASTE_THROTTLE_MS) {
+        console.warn('[gif] throttled');
+        return;
       }
-    }, 120);
+      lastGifPasteAt = now;
+    }
+
+    // ★ 统一获取当前聊天窗口类型：qq / wechat / enterprise
+    const target = getCurrentChatTarget();
+    const chatType = target?.type || null;
+
+    // ========== GIF 文件分支 ==========
+    if (result.type === 'gif-file' && result.path) {
+      const okFile = setClipboardFiles([result.path]);
+
+      console.log('[emojiPaste] setClipboardFiles ok=', okFile);
+      // 之后 before Ctrl+V:
+      console.log('[emojiPaste] before Ctrl+V, chatType=', chatType, 'lastWechatPxRect=', lastWechatPxRect);
+      if (!okFile) {
+        console.warn('[gif-filedrop] setClipboardFiles failed -> fallback static frame');
+        try {
+          const buf = fs.readFileSync(result.path);
+          const placed = await ensureImageInClipboard(buf, 'gif');
+          if (placed.type !== 'image') return;
+        } catch {
+          return;
+        }
+      }
+
+      if (chatType === 'qq') {
+        // QQ：和文字逻辑一致
+        await ensureQQForegroundSimple();
+      } else {
+        // 默认仍按微信逻辑
+        focusWeChatWindow();
+      }
+
+      setTimeout(() => {
+        try {
+          sendKeys.sendCtrlV();
+        } catch (e) {
+          console.warn('[gif-filedrop] ctrl+v fail:', e.message);
+        }
+        if (sendNow) {
+          setTimeout(() => {
+            try {
+              sendKeys.sendEnter();
+            } catch (e2) {
+              console.warn('[gif-filedrop] enter fail:', e2.message);
+            }
+            if (!pinnedAlwaysOnTop) updateZOrder(chatType);
+          }, 340);
+        } else {
+          if (!pinnedAlwaysOnTop) updateZOrder(chatType);
+        }
+      }, 240);
+      return;
+    }
+
+    // ========== GIF 失败静态回退分支 ==========
+    if (result.type === 'fallback-static') {
+      try {
+        const again = await downloadWithRedirect(src);
+        if (again && again.buffer) {
+          const placed = await ensureImageInClipboard(again.buffer, 'png');
+          if (placed.type === 'image') {
+            if (chatType === 'qq') {
+              await ensureQQForegroundSimple();
+            } else {
+              focusWeChatWindow();
+            }
+            setTimeout(() => {
+              try {
+                sendKeys.sendCtrlV();
+              } catch {}
+              if (sendNow) {
+                setTimeout(() => {
+                  try {
+                    sendKeys.sendEnter();
+                  } catch {}
+                  if (!pinnedAlwaysOnTop) updateZOrder(chatType);
+                }, 120);
+              } else if (!pinnedAlwaysOnTop) {
+                updateZOrder(chatType);
+              }
+            }, 160);
+          }
+        }
+      } catch {}
+      return;
+    }
+
+    // ========== 普通图片 / 文本 分支 ==========
+    if (result.type === 'image' || result.type === 'text') {
+      if (chatType === 'qq') {
+        // 与文字发送逻辑对齐：QQ 前台 + Ctrl+V + 可选 Enter
+        await ensureQQForegroundSimple();
+      } else {
+        // 微信 / 企微 / 其它仍旧
+        focusWeChatWindow();
+      }
+
+      setTimeout(() => {
+        try {
+          sendKeys.sendCtrlV();
+        } catch (e) {
+          console.warn('ctrl+v fail:', e.message);
+        }
+        if (sendNow) {
+          setTimeout(() => {
+            try {
+              sendKeys.sendEnter();
+            } catch (e2) {
+              console.warn('enter fail:', e2.message);
+            }
+            if (!pinnedAlwaysOnTop) updateZOrder(chatType);
+          }, 100);
+        } else if (!pinnedAlwaysOnTop) {
+          updateZOrder(chatType);
+        }
+      }, 160);
+      return;
+    }
+
+    // 其它 fail：不做地址回退
   })().catch(e => console.error('emoji paste error:', e));
 }
 
-ipcMain.on('emoji:paste', (_e, src) => {
-  pasteEmojiInternal(src, false);
-});
-ipcMain.on('emoji:paste-send', (_e, src) => {
-  pasteEmojiInternal(src, true);
-});
+ipcMain.on('emoji:paste', (_e, src) => pasteEmojiInternal(src, false));
+ipcMain.on('emoji:paste-send', (_e, src) => pasteEmojiInternal(src, true));
+
 function focusWeChatWindow() {
   try {
     let toFocus = null;
-    if (wechatHWND) {
-      const wins = windowManager.getWindows();
+    const wins = (windowManager && windowManager.getWindows) ? windowManager.getWindows() : [];
+
+    // If we already have a tracked handle, try that first
+    if (wechatHWND && Array.isArray(wins) && wins.length) {
       toFocus = wins.find(w => Number(w.handle) === Number(wechatHWND));
     }
-    if (!toFocus) {
-      const wins = windowManager.getWindows();
-      toFocus = wins.find(w => /微信|wechat/i.test(w.getTitle() || ''));
+
+    // Fallback 1: WeChat by title
+    if (!toFocus && Array.isArray(wins) && wins.length) {
+      toFocus = wins.find(w => /微信|wechat/i.test(String(w.getTitle() || '')));
     }
+
+    // NEW Fallback 2: Enterprise WeChat by title or process
+    if (!toFocus && Array.isArray(wins) && wins.length) {
+      toFocus = wins.find(w => {
+        const t = String(w.getTitle?.() || '');
+        const p = String(w.process?.name || '').replace(/\.exe$/i, '');
+        return /企业微信|wxwork|wecom/i.test(t) || /WXWork|WeCom|WeChatAppEx|WXWorkWeb|WeMail|WXDrive/i.test(p);
+      });
+    }
+
+    // NEW Fallback 3: QQ/QQNT by title or process
+    if (!toFocus && Array.isArray(wins) && wins.length) {
+      toFocus = wins.find(w => {
+        const t = String(w.getTitle?.() || '');
+        const p = String(w.process?.name || '').replace(/\.exe$/i, '');
+        return /qq|qqnt/i.test(t) || /qq|qqnt/i.test(p);
+      });
+    }
+
     if (toFocus) {
       try {
         toFocus.bringToTop();
@@ -1162,7 +2590,41 @@ function focusWeChatWindow() {
   } catch {}
 }
 
-// 选择目录
+function isAssistantDocked() {
+  try {
+    if (!wechatFound || !lastWechatPxRect || !mainWindow || mainWindow.isDestroyed()) return false;
+    if (!mainWindow.isVisible()) return false;
+    const assistant = mainWindow.getBounds();
+    if (!assistant || assistant.width < 50 || assistant.height < 50) return false;
+    const dipWechat = pxToDipRect(lastWechatPxRect);
+    const wx = dipWechat.x,
+      wy = dipWechat.y,
+      ww = dipWechat.width,
+      wh = dipWechat.height;
+    if (ww < 200 || wh < 200) return false;
+    const AX = assistant.x,
+      AY = assistant.y,
+      AW = assistant.width,
+      AH = assistant.height;
+    const H_TOLERANCE = 40;
+    const SIDE_TOLERANCE = 40;
+    const MIN_OVERLAP_HEIGHT_RATIO = 0.65;
+    const topAligned = Math.abs(AY - wy) <= H_TOLERANCE;
+    const overlapTop = Math.max(AY, wy);
+    const overlapBottom = Math.min(AY + AH, wy + wh);
+    const overlapHeight = Math.max(0, overlapBottom - overlapTop);
+    const overlapEnough = overlapHeight >= wh * MIN_OVERLAP_HEIGHT_RATIO;
+    const rightEdgeAssistant = AX + AW;
+    const leftDock = Math.abs(rightEdgeAssistant - wx) <= SIDE_TOLERANCE;
+    const rightDock = Math.abs(AX - (wx + ww)) <= SIDE_TOLERANCE;
+    return (leftDock || rightDock) && topAligned && overlapEnough;
+  } catch {
+    return false;
+  }
+}
+
+ipcMain.handle('wechat:is-docked', () => isAssistantDocked());
+
 ipcMain.handle('media:choose-dir', async (_e, payload) => {
   const title = (payload && payload.title) || '选择文件夹';
   const {
@@ -1176,7 +2638,45 @@ ipcMain.handle('media:choose-dir', async (_e, payload) => {
   return filePaths[0];
 });
 
-// 粘贴图片
+const ENTERPRISE_PROC_NAMES = new Set([
+  'WXWork.exe', 'WeCom.exe', 'WeChatAppEx.exe', 'WXWorkWeb.exe', 'WeMail.exe', 'WXDrive.exe'
+]);
+
+function detectEnterpriseForegroundFallback() {
+  try {
+    if (!windowManager || !windowManager.getActiveWindow) return false;
+    const active = windowManager.getActiveWindow();
+    if (active) {
+      const title = active.getTitle?.() || '';
+      const proc = active.process?.name || '';
+      if (/企业微信|wxwork|wecom/i.test(title)) return true;
+      if (ENTERPRISE_PROC_NAMES.has(proc)) return true;
+    }
+    const wins = windowManager.getWindows();
+    if (!Array.isArray(wins) || !wins.length) return false;
+    const activeHandle = active ? Number(active.handle) : null;
+    for (const w of wins) {
+      const t = w.getTitle?.() || '';
+      const p = w.process?.name || '';
+      const h = Number(w.handle);
+      if (/企业微信|wxwork|wecom/i.test(t) || ENTERPRISE_PROC_NAMES.has(p)) {
+        if (activeHandle && h === activeHandle) return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+ipcMain.handle('wechat:is-foreground', () => {
+  try {
+    return !!(isWechatActive || detectEnterpriseForegroundFallback());
+  } catch {
+    return false;
+  }
+});
+
 ipcMain.on('media:image-paste', async (_e, filePath) => {
   try {
     if (!filePath) return;
@@ -1311,22 +2811,19 @@ function cleanupAndQuit() {
   try {
     if (keeperWindow && !keeperWindow.isDestroyed()) keeperWindow.destroy();
   } catch {}
-  realAppQuit(); // 用真实 quit（允许退出已在 enableQuit 中打开）
+  realAppQuit();
 }
 
-// 拦截 window-all-closed：不显式 quitting 不退出
 app.on('window-all-closed', (e) => {
   console.log('[all-closed] quitting=', quitting, 'allowQuit=', allowQuit);
   if (!allowQuit) {
     e.preventDefault();
-    // 重新创建哨兵，保持进程
     createKeeperWindow();
     return;
   }
   cleanupAndQuit();
 });
 
-// 兼容 path.join 误写
 function pathJoin(...args) {
   try {
     return require('path').join(...args);

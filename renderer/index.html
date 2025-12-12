@@ -28,9 +28,61 @@
         background: transparent;
         /* 保持不可见 */
       }
+
       @keyframes emo-spin {
-        from { transform: rotate(0deg); }
-        to   { transform: rotate(360deg); }
+        from {
+          transform: rotate(0deg);
+        }
+
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes emo-spin {
+        from {
+          transform: rotate(0deg)
+        }
+
+        to {
+          transform: rotate(360deg)
+        }
+      }
+
+      /* 让按钮带 spinning 类时，里面的 svg 转圈 */
+      #ai-agent-reload-btn.spinning svg {
+        animation: emo-spin 1s linear infinite;
+      }
+
+      #ai-agent-reload-btn {
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        border: 1px solid #d0e2ff;
+        background: #ffffff;
+        color: #278bff;
+        cursor: pointer;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+        transition: background .15s ease, border-color .15s ease, transform .06s ease;
+      }
+
+      #ai-agent-reload-btn:hover {
+        background: #f3f8ff;
+        border-color: #278bff;
+      }
+
+      #ai-agent-reload-btn:active {
+        transform: scale(0.96);
+      }
+
+      #ai-agent-reload-btn svg {
+        width: 16px;
+        height: 16px;
+        fill: currentColor;
       }
     </style>
     <link rel="stylesheet" href="./css/header.css">
@@ -102,7 +154,8 @@
           <div class="ai-actions">
             <!-- <button id="resetAreaBtn">重选截图框</button> -->
             <!-- <button id="btn-wechat-ocr">微信截图</button> -->
-            <button id="ai-generate">生成建议</button>
+            <button id="ai-generate">截图生成</button>
+            <button id="ai-zhijie-generate">直接生成</button>
           </div>
         </div>
 
@@ -112,6 +165,13 @@
         <!-- 智能体底部导航栏 -->
         <div class="ai-agent-navbar" id="ai-agent-navbar">
           <button class="ai-agent-selected-btn" id="ai-agent-selected-btn">智能体</button>
+          <!-- 改为图标按钮（无文字） -->
+          <button class="reload-btn" id="ai-agent-reload-btn" title="刷新智能体" aria-label="刷新智能体">
+            <!-- 简洁刷新图标（SVG） -->
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M12 6V3L8 7l4 4V8c2.76 0 5 2.24 5 5a5 5 0 1 1-5-5zm0 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"></path>
+            </svg>
+          </button>
           <div class="ai-agent-dropdown" id="ai-agent-dropdown" style="display:none;">
             <ul class="ai-agent-dropdown-list" id="ai-agent-dropdown-list"></ul>
             <button class="ai-agent-add-btn" id="ai-agent-add-btn" title="添加智能体">+</button>
@@ -151,15 +211,16 @@
     <div id="models-area" style="display:none;" class="padding10">
       <section class="tabpane" role="tabpanel" id="tab-models" aria-labelledby="tabbtn-models" aria-hidden="true">
         <div class="aimodels">
-          <div class="aimodels-tabs" id="aimodels-tabs" role="tablist" aria-label="AI模型站点">
-            <button class="aim-tab active" role="tab" aria-selected="true" tabindex="0"
-              data-url="https://www.doubao.com/chat/">豆包</button>
-          </div>
+          <div style="display: flex;justify-content:space-between;margin-top: 10px;">
+            <div class="aimodels-tabs" id="aimodels-tabs" role="tablist" aria-label="AI模型站点">
+              <button class="aim-tab active" role="tab" aria-selected="true" tabindex="0"
+                data-url="https://www.doubao.com/chat/">豆包</button>
+            </div>
 
-          <div class="aimodels-actions">
-            <button id="aimodels-open-external">在浏览器打开</button>
+            <div class="aimodels-actions">
+              <button id="aimodels-open-external">在浏览器打开</button>
+            </div>
           </div>
-
           <div class="aimodels-view">
             <!-- <div id="aimodels-host" class="aimodels-host"></div> -->
             <iframe id="aimodels-fallback" hidden sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
@@ -213,19 +274,19 @@
     <div class="fixed-footer-bar">
       <button class="footer-btn"><span class="icon-menu"></span></button>
       <span class="footer-right">
-        <span class="vip-badge">VIP</span>
-        <span class="footer-text">官网</span>
+        <!-- <span class="vip-badge">VIP</span>
+        <span class="footer-text">官网</span> -->
         <span class="footer-text footer-account" id="footer-account" role="button" title="登录">登录</span>
     </div>
 
     <!-- 右侧缩放条（不可见，仅用于命中拖动） -->
     <div id="edge-resizer-right" aria-hidden="true"></div>
-   <script src="./js/header.js"></script>
+    <script src="./js/header.js"></script>
     <script src="./js/tabs.js"></script>
     <script src="./js/phrases.js"></script>
     <script src="./js/ai.js"></script>
     <script src="./js/aimodels.js"></script>
- 
+
     <script src="./js/menu.js"></script>
     <script src="./js/resize.js"></script>
     <script src="./js/ai-dragdrop.js"></script>

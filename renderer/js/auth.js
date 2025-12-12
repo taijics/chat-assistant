@@ -62,6 +62,10 @@
         <h3>登录</h3>
         <div class="auth-field"><input id="auth-account" type="text" placeholder="账号" autocomplete="username"></div>
         <div class="auth-field"><input id="auth-password" type="password" placeholder="密码" autocomplete="current-password"></div>
+        <div class="auth-field" style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+          <input id="auth-remember" type="checkbox" style="width:14px;height:14px;margin:0;">
+          <label for="auth-remember" style="font-size:12px;color:#555;cursor:pointer;user-select:none;">记住账号</label>
+        </div>
         <div id="auth-error" class="auth-error"></div>
         <div class="auth-actions">
           <button id="auth-cancel" class="sys-btn">取消</button>
@@ -73,11 +77,21 @@
 
     const inputAcc = $('#auth-account', mask);
     const inputPwd = $('#auth-password', mask);
+    const chkRemember = $('#auth-remember', mask);
     const btnCancel = $('#auth-cancel', mask);
     const btnSubmit = $('#auth-submit', mask);
     const errEl = $('#auth-error', mask);
 
     inputAcc && inputAcc.focus();
+
+    try {
+      const rememberedFlag = localStorage.getItem('auth.remember') === '1';
+      const rememberedAcc = localStorage.getItem('auth.remember.account') || '';
+      if (chkRemember) chkRemember.checked = rememberedFlag;
+      if (rememberedFlag && rememberedAcc && inputAcc) {
+        inputAcc.value = rememberedAcc;
+      }
+    } catch {}
 
     const close = () => {
       try {
@@ -127,11 +141,28 @@
           save: true
         });
 
+        // 新增：根据“记住账号”复选框，决定是否记住 token 与账号
+        try {
+          const remember = chkRemember && chkRemember.checked;
+          if (remember) {
+            // 标记记住 & 记住账号 + 当前 token
+            localStorage.setItem('auth.remember', '1');
+            localStorage.setItem('auth.remember.account', account);
+            const tk = API.getToken && API.getToken();
+            if (tk) localStorage.setItem('auth.remember.token', tk);
+          } else {
+            // 取消记住：清除相关信息
+            localStorage.removeItem('auth.remember');
+            localStorage.removeItem('auth.remember.account');
+            localStorage.removeItem('auth.remember.token');
+          }
+        } catch {}
+
         // 新增：清除“需要重新登录”一次性标记
         try {
           localStorage.removeItem('auth.needsLogin');
         } catch {}
-        //通知短语模块去加载公司/小组类别与话术（文本类）
+        //通知短语模块...
         window.dispatchEvent(new CustomEvent('auth:login', {
           detail: {
             user: API.getUser && API.getUser()
@@ -173,7 +204,12 @@
               });
             } catch (e) {}
             updateFooterAuthUI();
-            
+            // 退出登录时清除“记住登录”信息（token & 账号）
+            try {
+              localStorage.removeItem('auth.remember');
+              localStorage.removeItem('auth.remember.account');
+              localStorage.removeItem('auth.remember.token');
+            } catch {}
             // 新增：派发登出事件，phrases.js 会根据 isAdmin 为空隐藏“小组＋”
             window.dispatchEvent(new CustomEvent('auth:logout'));
           });
@@ -185,15 +221,53 @@
       });
     }
     updateFooterAuthUI();
-    // 新增：若 401 发生在监听挂载前，通过 localStorage 标记补偿弹窗
+
+    // 新增：优先尝试用记住的 token 自动恢复登录
     try {
-      if (localStorage.getItem('auth.needsLogin') === '1') {
-        localStorage.removeItem('auth.needsLogin');
-        showLoginModal();
+      const remember = localStorage.getItem('auth.remember') === '1';
+      const savedToken = localStorage.getItem('auth.remember.token') || '';
+      if (remember && savedToken && (!API.getToken || !API.getToken())) {
+        // 本地还没有 token，就用记住的 token 直接恢复
+        API.setToken && API.setToken(savedToken);
+        // 尝试拉一次用户信息，不弹窗
+        API.auth.profile({
+          save: true
+        }).then(() => {
+          updateFooterAuthUI();
+          // 通知其它模块已经登录（比如短语那边）
+          window.dispatchEvent(new CustomEvent('auth:login', {
+            detail: {
+              user: API.getUser && API.getUser()
+            }
+          }));
+        }).catch(() => {
+          // 失败就视为需要重新登录，清掉记住信息，后面再走弹窗逻辑
+          try {
+            localStorage.removeItem('auth.remember');
+            localStorage.removeItem('auth.remember.account');
+            localStorage.removeItem('auth.remember.token');
+          } catch {}
+          // 再按原逻辑处理 auth.needsLogin
+          if (localStorage.getItem('auth.needsLogin') === '1') {
+            localStorage.removeItem('auth.needsLogin');
+            showLoginModal();
+          }
+        });
+      } else {
+        // 没有记住 token 的情况，保留原来的 401 标记弹窗逻辑
+        if (localStorage.getItem('auth.needsLogin') === '1') {
+          localStorage.removeItem('auth.needsLogin');
+          showLoginModal();
+        }
       }
     } catch {}
-    // 新增：监听 API 层派发的 401 事件
+
+    // 监听 API 层派发的 401 事件：这时也可以先试清除 token&记住，再弹登录
     window.addEventListener('auth:login-required', () => {
+      try {
+        // 发 401 时，当前 token 已失效，清掉老的记住信息
+        localStorage.removeItem('auth.remember.token');
+      } catch {}
       showLoginModal();
     });
   }

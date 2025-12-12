@@ -96,7 +96,8 @@
 
 /* 添加按钮与下拉 */
 .phrase-cats-ops {
-  position: relative;
+  right: 6px;
+  position: fixed;
   flex: 0 0 auto;
 }
 
@@ -155,7 +156,6 @@
   display: grid;
   grid-template-columns: 1fr;
   gap: 8px;
-  max-height: 48vh;
   overflow: auto;
 }
 
@@ -587,4 +587,12 @@
   text-align: center;
   margin: 8px 0;
   user-select: none;
+}
+
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  max-height: 90vh;
+  overflow: auto;
 }

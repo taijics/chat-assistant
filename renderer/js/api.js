@@ -10,7 +10,8 @@
    */
 
   // -------------------- 常量与本地存储键 --------------------
-  const DEFAULT_BASE_URL = 'http://127.0.0.1:6004'; // 统一默认后端地址
+   //const DEFAULT_BASE_URL = 'http://127.0.0.1:6003'; // 统一默认后端地址
+ const DEFAULT_BASE_URL = 'https://back.aiweiban.cn'; // 统一默认后端地址
   const LS_TOKEN = 'auth.token';
   const LS_TOKEN_NAME = 'auth.tokenName'; // 例如 "auth-token" 或 "Authorization"
   const LS_USER = 'auth.user';
@@ -20,7 +21,7 @@
   // 优先取 localStorage，其次落回默认 DEFAULT_BASE_URL
   let baseURL = DEFAULT_BASE_URL;
   try {
-    baseURL = localStorage.getItem(LS_BASE) || DEFAULT_BASE_URL;
+    baseURL = DEFAULT_BASE_URL;
     // 规范化：如果误把 /api/front 配到了 baseURL，自动剥掉，避免重复拼接
     if (/\/api\/front\/?$/i.test(baseURL)) {
       baseURL = baseURL.replace(/\/api\/front\/?$/i, '');
@@ -323,12 +324,14 @@
       contentTypeId,
       title,
       content,
+      pid,
       typeClass
     } = {}) {
       return post('/api/front/content/addByMe', {
         useScope, // 1=小组，2=私人
         contentTypeId, // 为空则会按 title 新建类别
         title, // 新建类别标题
+        pid,
         content, // 可选：要添加的话术内容或图片URL
         typeClass // 0图片 1表情 2文字（默认传 2）
       });

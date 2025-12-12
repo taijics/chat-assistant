@@ -1,10 +1,20 @@
 (() => {
-  // 顶栏交互：DOMContentLoaded 后绑定；支持 Alt+D 切换 DevTools
-  const {
-    ipcRenderer
-  } = require('electron');
-
+  const { ipcRenderer } = require('electron');
   const $ = (sel) => document.querySelector(sel);
+
+  /* 如果页面没有 .app-titlebar 就动态创建 */
+  function ensureTitlebar() {
+    let tb = document.querySelector('.app-titlebar');
+    if (tb) return tb;
+    tb = document.createElement('div');
+    tb.className = 'app-titlebar';
+    tb.innerHTML = `
+      <div class="app-topnav"></div>
+      <div class="spacer"></div>
+    `;
+    document.body.insertBefore(tb, document.body.firstChild);
+    return tb;
+  }
 
   function toggleMenu(show) {
     const menu = $('#app-menu');
@@ -13,15 +23,67 @@
     menu.classList.toggle('open', willShow);
   }
 
+  function setActiveTopNav(tab) {
+    const nav = document.querySelector('.app-topnav');
+    if (!nav) return;
+    nav.querySelectorAll('.app-nav-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+  }
+
+  function showArea(area) {
+    const phrases = document.getElementById('phrases-area');
+    const ai      = document.getElementById('ai-area');
+    const models  = document.getElementById('models-area');
+    const emojis  = document.getElementById('emojis-area');
+    if (phrases) phrases.style.display = (area === 'phrases') ? '' : 'none';
+    if (ai)      ai.style.display      = (area === 'ai') ? '' : 'none';
+    if (models)  models.style.display  = (area === 'models') ? '' : 'none';
+    if (emojis)  emojis.style.display  = (area === 'emojis') ? '' : 'none';
+  }
+
+  function ensureTopNavInserted() {
+    const titlebar = ensureTitlebar();
+    const nav = titlebar.querySelector('.app-topnav');
+    if (!nav) return;
+    if (nav.querySelector('.app-nav-btn')) return; // 已有按钮
+
+    nav.innerHTML = `
+      <button class="app-nav-btn" data-tab="phrases" title="话术">话术</button>
+      <button class="app-nav-btn" data-tab="models"  title="浏览器">浏览器</button>
+      <button class="app-nav-btn" data-tab="ai"      title="智能体">智能体</button>
+      <button class="app-nav-btn" data-tab="emojis"  title="表情/图片">表情/图片</button>
+    `;
+
+    nav.addEventListener('click', (e) => {
+      const btn = e.target.closest('.app-nav-btn');
+      if (!btn) return;
+      const tab = btn.dataset.tab;
+      if (!tab) return;
+      showArea(tab);
+      setActiveTopNav(tab);
+      try { ipcRenderer.send('menu:switch-tab', tab); } catch {}
+      if (tab === 'phrases') {
+         if (window.__openPhrasesPanel) window.__openPhrasesPanel();
+      } else if (tab === 'models') {
+        setTimeout(() => { if (window.activateModelTab) window.activateModelTab(); }, 10);
+      }
+    });
+
+    setActiveTopNav('phrases'); // 初始选中
+  }
+
   function bindHeader() {
+    ensureTitlebar();
+    ensureTopNavInserted();
+
     const titlebar = document.querySelector('.app-titlebar');
     if (!titlebar) return;
 
-    // 事件委托：设置 / 最小化 / 退出
+    // 右侧按钮
     titlebar.addEventListener('click', (e) => {
-      const target = e.target.closest('#btn-settings, #btn-minimize, #btn-exit');
+      const target = e.target.closest('#btn-settings,#btn-minimize,#btn-exit');
       if (!target) return;
-
       if (target.id === 'btn-settings') {
         e.stopPropagation();
         toggleMenu(true);
@@ -37,7 +99,7 @@
       }
     });
 
-    // 菜单项点击
+    // 设置菜单项
     const menu = $('#app-menu');
     if (menu) {
       menu.addEventListener('click', (e) => {
@@ -57,35 +119,21 @@
     });
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') toggleMenu(false);
-      // 调试：Alt + D 切换 DevTools（主进程有对应 IPC）
-      if (e.altKey && (e.key === 'd' || e.key === 'D')) {
-        ipcRenderer.send('devtools:toggle');
-      }
+      if (e.altKey && (e.key === 'd' || e.key === 'D')) ipcRenderer.send('devtools:toggle');
     });
   }
 
-  function showArea(area) {
-    console.log(area)
-    document.getElementById('phrases-area').style.display = (area === 'phrases') ? '' : 'none';
-    document.getElementById('ai-area').style.display = (area === 'ai') ? '' : 'none';
-    document.getElementById('models-area').style.display = (area === 'models') ? '' : 'none';
-    document.getElementById('emojis-area').style.display = (area === 'emojis') ? '' : 'none';
-  }
-
+  // 主进程切换事件同步
   ipcRenderer.on('menu:switch-tab', (_e, tabName) => {
     showArea(tabName);
-    // 切换到话术时，默认激活公司tab
+    setActiveTopNav(tabName);
     if (tabName === 'phrases') {
-      if (window.activateTab) window.activateTab('corp');
-    }
-    // 切换到浏览器时，默认激活豆包
-    if (tabName === 'models') {
-      setTimeout(() => {
-        if (window.activateModelTab) window.activateModelTab();
-      }, 10);
+       if (window.__openPhrasesPanel) window.__openPhrasesPanel();
+    } else if (tabName === 'models') {
+      setTimeout(() => { if (window.activateModelTab) window.activateModelTab(); }, 10);
     }
   });
-  // 同步“置顶”勾选状态
+
   ipcRenderer.on('toolbar:pin-state', (_e, pinned) => {
     const pinItem = document.getElementById('menu-pin');
     if (pinItem) pinItem.classList.toggle('checked', !!pinned);
@@ -96,10 +144,9 @@
   } else {
     bindHeader();
   }
-  
-  // 新增：全局通用确认框（任何页面可调用 window.uiConfirm(...)）
+
+  /* ===== 保留原确认框与 toast 功能 ===== */
   function uiConfirm({ title = '确认操作', message = '确定要执行该操作吗？', okText = '确定', cancelText = '取消', danger = false } = {}) {
-    // 注入一次样式
     if (!document.getElementById('confirm-style')) {
       const style = document.createElement('style');
       style.id = 'confirm-style';
@@ -117,7 +164,6 @@
       `;
       document.head.appendChild(style);
     }
-  
     return new Promise((resolve) => {
       const mask = document.createElement('div');
       mask.className = 'confirm-mask';
@@ -134,23 +180,20 @@
       const dialog = mask.querySelector('.confirm-dialog');
       const btnOk = mask.querySelector('.btn-ok');
       const btnCancel = mask.querySelector('.btn-cancel');
-      function close(val) { mask.remove(); resolve(!!val); }
+      function close(val){ mask.remove(); resolve(!!val); }
       btnOk.onclick = () => close(true);
       btnCancel.onclick = () => close(false);
-      mask.addEventListener('click', (e) => { if (e.target === mask) close(false); });
-      dialog.addEventListener('click', (e) => e.stopPropagation());
+      mask.addEventListener('click', e => { if (e.target === mask) close(false); });
+      dialog.addEventListener('click', e => e.stopPropagation());
       mask.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') { e.preventDefault(); close(false); }
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); close(true); }
       });
     });
   }
-  // 挂到全局
   window.uiConfirm = uiConfirm;
-  
-  
-  // 添加在 uiConfirm 定义旁边（上/下均可），确保只注入一次样式
-  function showToast(message, { type = 'success', duration = 1200 } = {}) {
+
+  function showToast(message, { type='success', duration=1200 } = {}) {
     if (!document.getElementById('toast-style')) {
       const style = document.createElement('style');
       style.id = 'toast-style';
@@ -160,11 +203,9 @@
                box-shadow:0 6px 18px rgba(0,0,0,.18);opacity:0;transform:translateY(6px) scale(.98);
                transition:opacity .15s ease, transform .15s ease;pointer-events:none;font-size:13px;line-height:1.3}
         .toast.show{opacity:1;transform:translateY(0) scale(1)}
-        .toast.success{background:rgba(16,185,129,.95)}   /* 绿色 */
-        .toast.error{background:rgba(239,68,68,.95)}      /* 红色 */
+        .toast.success{background:rgba(16,185,129,.95)}
+        .toast.error{background:rgba(239,68,68,.95)}
         .toast .icon{font-weight:700;font-size:14px;line-height:1}
-        .toast.success .icon{content:"";} /* 留空即可用字符 */
-        .toast.error .icon{content:"";}   /* 留空即可用字符 */
       `;
       document.head.appendChild(style);
     }
@@ -185,11 +226,11 @@
     el.appendChild(icon);
     el.appendChild(text);
     wrap.appendChild(el);
-    requestAnimationFrame(() => el.classList.add('show'));
+    requestAnimationFrame(()=> el.classList.add('show'));
     setTimeout(() => {
       el.classList.remove('show');
-      setTimeout(() => el.remove(), 180);
-    }, Math.max(600, duration));
+      setTimeout(()=> el.remove(), 180);
+    }, Math.max(600,duration));
   }
   window.showToast = showToast;
 })();

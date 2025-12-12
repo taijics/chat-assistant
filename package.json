@@ -1,15 +1,16 @@
 {
   "name": "chat-assistant",
   "version": "1.0.0",
-  "description": "微信聊天助手",
-  "author": "Your Name",
+  "description": "微伴",
+  "author": "天作智合",
   "main": "main/index.js",
   "packageManager": "pnpm@9.0.0",
   "scripts": {
     "start": "cross-env NODE_OPTIONS= electron .",
     "postinstall": "powershell -NoProfile -Command \"$c=@(); $c+=Join-Path $env:APPDATA 'npm/pnpm.cmd'; $c+=Join-Path $env:LOCALAPPDATA 'node-corepack/pnpm/pnpm.cmd'; if($env:NVM_SYMLINK){ $c+=Join-Path $env:NVM_SYMLINK 'pnpm.cmd' }; $c+=Join-Path $env:ProgramFiles 'nodejs/corepack/shims/pnpm.cmd'; $c+=Join-Path $env:ProgramFiles 'nodejs/pnpm.cmd'; $p=$c | Where-Object { Test-Path $_ } | Select-Object -First 1; if(-not $p){ Write-Error 'pnpm.cmd not found in PATH or common locations'; exit 1 }; Remove-Item Env:npm_execpath -ErrorAction SilentlyContinue; $env:npm_execpath=$p; electron-builder install-app-deps\"",
     "rebuild": "electron-rebuild -f -w node-window-manager",
-    "build:win": "set CSC_IDENTITY_AUTO_DISCOVERY=false && set ELECTRON_BUILDER_DISABLE_CODE_SIGNING=true && electron-builder --win",
+    "build:py": "python -m pip install --upgrade pip && python -m pip install -r py/requirements.txt && python -m PyInstaller --noconfirm --clean --onefile --distpath py-dist --workpath py-build --name wechat_ocr --add-data \"py/wechat.png;.\" py/new_wechat_ocr_baidu.py",
+    "build:win": "set CSC_IDENTITY_AUTO_DISCOVERY=false && set ELECTRON_BUILDER_DISABLE_CODE_SIGNING=true && npm run build:py && electron-builder --win",
     "build:win:portable": "set CSC_IDENTITY_AUTO_DISCOVERY=false && set ELECTRON_BUILDER_DISABLE_CODE_SIGNING=true && electron-builder --win portable",
     "build:win:nsis": "set CSC_IDENTITY_AUTO_DISCOVERY=false && set ELECTRON_BUILDER_DISABLE_CODE_SIGNING=true && electron-builder --win nsis",
     "build:dir": "set CSC_IDENTITY_AUTO_DISCOVERY=false && set ELECTRON_BUILDER_DISABLE_CODE_SIGNING=true && electron-builder --win dir",
@@ -17,7 +18,7 @@
   },
   "build": {
     "appId": "com.wxchat.chatassistant",
-    "productName": "微信聊天助手",
+    "productName": "微伴",
     "directories": {
       "buildResources": "app-build",
       "output": "dist"
@@ -31,11 +32,19 @@
       "!**/*.md",
       "!**/*.ts",
       "!**/README*",
-      "!**/LICENSE*"
+      "!**/LICENSE*",
+      "!main/set-clipboard-files.exe",
+      "!main/set-clipboard-files.cs"
     ],
     "asar": true,
     "asarUnpack": [
-      "**/*.node"
+      "**/*.node",
+      "main/set-clipboard-files.exe"
+    ],
+    "extraResources": [
+      { "from": "py-dist/wechat_ocr.exe", "to": "py/wechat_ocr.exe" },
+      { "from": "app-build/extra-resources/", "to": "extra", "filter": ["**/*"] },
+      { "from": "main/set-clipboard-files.exe", "to": "set-clipboard-files.exe" }
     ],
     "win": {
       "target": [
@@ -43,7 +52,8 @@
         "portable"
       ],
       "icon": "app-build/icon.ico",
-      "requestedExecutionLevel": "asInvoker"
+      "requestedExecutionLevel": "asInvoker",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -57,15 +67,7 @@
     "portable": {
       "artifactName": "${productName}-${version}-portable-${arch}.${ext}"
     },
-    "extraResources": [
-      {
-        "from": "app-build/extra-resources/",
-        "to": "extra",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ]
+    "npmRebuild": false
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
