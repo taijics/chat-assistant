@@ -29,7 +29,7 @@ const realProcExit = process.exit.bind(process);
 let allowQuit = false;
 
 let gifStoreDir = path.join(app.getPath('userData'), 'gif-cache');
-
+let lastProcName = '';  // 记录最近一次监控到的聊天进程名（小写）
 function ensureGifStoreDir() {
   try {
     fs.mkdirSync(gifStoreDir, {
@@ -542,6 +542,13 @@ function computeDockX(pxRect, width) {
   if (nextX < wa.x) nextX = wa.x;
   const maxX = wa.x + wa.width - width;
   if (nextX > maxX) nextX = maxX;
+  
+   // ★ 统一向左再挪 7 像素，让贴靠更紧（所有微信跟随都会受这个偏移）
+    if(isCurrentChatWeChat()){
+      nextX -= 7;
+    }
+
+  
   return nextX;
 }
 
@@ -901,6 +908,10 @@ let lastChatType = null;
 
 function handleEvent(evt) {
   if (quitting) return;
+   // 记录当前聊天窗口的进程名（wechat.exe / qq.exe 等，wechat_monitor 已经转小写）
+    if (evt && typeof evt.procName === 'string') {
+      lastProcName = String(evt.procName || '').toLowerCase();
+    }
   const {
     type,
     x,
@@ -1303,19 +1314,20 @@ ipcMain.on('window:resize-width', (_e, newWidth) => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const clamped = clamp(Math.round(newWidth || 0), ASSISTANT_MIN_W, ASSISTANT_MAX_W);
   if (clamped === assistWidth) return;
+
   assistWidth = clamped;
-  target.w = clamped;
-  if (lastWechatPxRect) {
-    target.x = computeDockX(lastWechatPxRect, assistWidth);
-  }
+  // 不再在拖动时自动改 target / x，只改当前窗口宽度
   try {
     const b = mainWindow.getBounds();
     mainWindow.setBounds({
-      x: Math.round(target.x ?? b.x),
+      x: b.x,
       y: b.y,
       width: clamped,
       height: b.height
     });
+    // 同步一下 target/current 的 w，保持动画后续正常
+    target.w = clamped;
+    current.w = clamped;
   } catch {}
 });
 
@@ -1901,6 +1913,15 @@ function startForegroundFollow() {
       updateZOrder();
     }
   }, FG_CHECK_INTERVAL);
+}
+
+function isCurrentChatWeChat() {
+  const p = (lastProcName || '').toLowerCase();
+  // wechat.exe / wechatapp.exe / wechatappex.exe / weixin.exe
+  return p === 'wechat.exe' ||
+         p === 'wechatapp.exe' ||
+         p === 'wechatappex.exe' ||
+         p === 'weixin.exe';
 }
 
 function dockToWechatNow(force = false) {

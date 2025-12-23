@@ -338,7 +338,10 @@
               // 让聊天窗前台：主进程里的 emoji:paste 会自己用 getCurrentChatTarget/ensureQQForegroundSimple
               // 所以这里只负责发 IPC
             }
-            console.log('[emojis] ensureDockThenPaste -> send', { sendNow, url });
+            console.log('[emojis] ensureDockThenPaste -> send', {
+              sendNow,
+              url
+            });
             ipcRenderer.send(sendNow ? 'emoji:paste-send' : 'emoji:paste', url);
           } catch (e) {
             console.warn('[emojis] ensureDockThenPaste error:', e && e.message);
@@ -780,43 +783,51 @@
     };
     // 监听主界面切换到“表情/图片”页签时，强制刷新 net 类别和列表
     // 监听主界面切换到“表情/图片”页签时，确保一定请求一次网络表情类别和图片
-    ipcRenderer.on('menu:switch-tab', (_e, tabName) => {
+    // 当主界面切换到“表情/图片”页签时，强制重新请求 net 类别和内容
+    ipcRenderer.on('menu:switch-tab', async (_e, tabName) => {
       if (tabName !== 'emojis') return;
 
-      // 固定从 net 开始
+      console.log('[emojis] menu:switch-tab -> emojis, force reload cats & items');
+
+      // 每次从 net 开始
       currentTab = 'net';
+      currentCat = '';
 
-      // 如果还没拉过 net 的类别，或者本地为空，则强制请求一次
-      const needFetchCats = !Array.isArray(remoteCats.net) || remoteCats.net.length === 0;
+      try {
+        // 1) 重新请求 net 的类别列表
+        await loadRemoteCats('net');
+        console.log('[emojis] loadRemoteCats(net) done, cats =', remoteCats.net);
 
-      const doRender = () => {
-        // 如果 currentCat 还没选中，就选第一个
-        if (!currentCat) currentCat = remoteCats.net[0] || '';
+        // 2) 选中第一个类别
+        currentCat = remoteCats.net[0] || '';
+        console.log('[emojis] currentCat =', currentCat);
 
+        // 3) 先渲染 tab & 分类条
         renderTabBar();
         renderAllEmojiCatsBar();
 
-        // 如果当前类别还没加载图片，触发一次加载
-        if (currentCat && !remoteLoaded.net[currentCat]) {
-          renderAllEmojiLists(); // 里面会显示“加载中...”并调用 loadRemoteItems
-        } else {
-          renderAllEmojiLists();
+        // 4) 如果有类别，先清空列表，显示“加载中...”，再拉内容
+        const grid = document.getElementById('emoji-list-net');
+        if (grid) {
+          grid.innerHTML = `<div style="padding:20px;color:#999;">加载中...</div>`;
         }
-      };
 
-      if (needFetchCats) {
-        loadRemoteCats('net')
-          .then(() => {
-            currentCat = remoteCats.net[0] || '';
-            doRender();
-          })
-          .catch(err => {
-            console.warn('[emojis] loadRemoteCats(net) on menu:switch-tab fail:', err && err.message);
-            doRender();
-          });
-      } else {
-        // 已经有类别信息了，直接渲染并按需加载当前类别的图片
-        doRender();
+        if (currentCat) {
+          // 标记为未加载，强制 list 请求
+          remoteLoaded.net[currentCat] = false;
+          await loadRemoteItems('net', currentCat);
+          console.log('[emojis] loadRemoteItems(net,', currentCat, ') done, count =',
+            (remoteItems.net[currentCat] || []).length);
+        }
+
+        // 5) 最终渲染所有列表（只会对 currentTab=net 生效）
+        renderAllEmojiLists();
+      } catch (err) {
+        console.warn('[emojis] menu:switch-tab emojis reload fail:', err && err.message);
+        // 失败时也至少把 UI 渲染出来，避免空白
+        renderTabBar();
+        renderAllEmojiCatsBar();
+        renderAllEmojiLists();
       }
     });
   });
