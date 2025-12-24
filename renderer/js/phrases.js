@@ -220,8 +220,16 @@
     const visibleCats = catsAll.slice(0, MAX_SHOW);
     const moreCats = catsAll.slice(MAX_SHOW);
 
+    const countItemsOfTop = (top) => {
+      const seconds = Array.isArray(top?.seconds) ? top.seconds : []
+      return seconds.reduce((sum, s) => sum + (Array.isArray(s?.items) ? s.items.length : 0), 0)
+    }
+
     const catsHtml = visibleCats.map(c =>
-      `<button class="cat ${c.name === activeCat ? 'active' : ''}" data-id="${c.id}" data-cat="${c.name}" data-count="${c.items.length}">${c.name}</button>`
+      `<button class="cat ${c.name === activeCat ? 'active' : ''}"
+     data-id="${c.id}"
+     data-cat="${c.name}"
+     data-count="${countItemsOfTop(c)}">${c.name}</button>`
     ).join('');
 
     // “更多...”按钮与下拉（只有当有折叠项时显示）
@@ -269,7 +277,6 @@
       setActiveCat(name);
       $$('.cat', list).forEach(b => b.classList.toggle('active', b === btn));
 
-      await loadCatItemsByName(name);
       renderList();
     });
 
@@ -311,7 +318,6 @@
       setActiveCat(selName);
       // 3) 重新渲染（使其显示为第一并高亮）
       renderCats();
-      await loadCatItemsByName(selName);
       renderList();
       closeMore();
     }, {
@@ -366,90 +372,135 @@
     });
   }
 
- // 覆盖：renderList（显示标题在上、内容在下；点击/双击仅粘贴内容）
- // 覆盖 renderList：为每个短语项增加 dataset.title，便于右键编辑时回显标题
- function renderList() {
-   const listWrap = document.getElementById('phrase-list-' + currentTab);
-   if (!listWrap) return;
- 
-   const seq = ++listRenderSeq[currentTab];
- 
-   const data = getData();
-   const activeCat = getActiveCat();
-   const cat = data.cats.find(c => c.name === activeCat);
-   const items = cat ? cat.items : [];
-   console.log('[phrases] renderList activeCat=', activeCat, 'items.len=', items.length);
- 
-   listWrap.innerHTML = '';
-   const BATCH = 120;
-   let i = 0;
- 
-   function appendBatch() {
-     if (seq !== listRenderSeq[currentTab]) return;
- 
-     const frag = document.createDocumentFragment();
-     for (let n = 0; n < BATCH && i < items.length; n++, i++) {
-       const t = items[i]; // { id, title, text }
-       const el = document.createElement('div');
-       el.className = 'phrase-item';
-       el.dataset.content = String(t.text || '').replace(/"/g, '&quot;'); // 仅粘贴内容
-       el.dataset.title = String(t.title || '').replace(/"/g, '&quot;');   // 供编辑弹框回显
-       if (t.id) el.dataset.id = t.id;
-       el.title = '单击：粘贴内容；双击：粘贴并发送；右键：操作';
- 
-       const titleDiv = document.createElement('div');
-       titleDiv.className = 'title';
-       titleDiv.textContent = (t.title || '').trim();
- 
-       const textDiv = document.createElement('div');
-       textDiv.className = 'text';
-       textDiv.textContent = (t.text || '').trim();
- 
-       el.appendChild(titleDiv);
-       el.appendChild(textDiv);
-       frag.appendChild(el);
-     }
-     listWrap.appendChild(frag);
-     if (i < items.length) requestAnimationFrame(appendBatch);
-   }
-   requestAnimationFrame(appendBatch);
- 
-   // 点击/双击事件：仅使用 dataset.content
-   if (!listWrap._eventsBound) {
-     let singleTimer = null;
-     listWrap.addEventListener('click', (e) => {
-       const item = e.target.closest('.phrase-item');
-       if (!item) return;
-       const content = item.dataset.content || '';
-       console.log('[phrases] paste click content=', content);
-       if (!content) return;
-       clearTimeout(singleTimer);
-       singleTimer = setTimeout(() => {
-         ipcRenderer.send('phrase:paste', content);
-         singleTimer = null;
-       }, 300);
-     });
-     listWrap.addEventListener('dblclick', (e) => {
-       const item = e.target.closest('.phrase-item');
-       if (!item) return;
-       const content = item.dataset.content || '';
-       console.log('[phrases] paste dblclick content=', content);
-       if (!content) return;
-       if (singleTimer) {
-         clearTimeout(singleTimer);
-         singleTimer = null;
-       }
-       ipcRenderer.send('phrase:paste-send', content);
-     });
-     listWrap._eventsBound = true;
-   }
- }
-// 新增：编辑短语弹框（标题 + 内容），回显初始值，返回 { title, content } 或 null
-async function uiEditPhraseDialog(initialTitle, initialContent) {
-  return new Promise(resolve => {
-    const mask = document.createElement('div');
-    mask.className = 'prompt-mask';
-    mask.innerHTML = `
+  // 覆盖 renderList：为每个短语项增加 dataset.title，便于右键编辑时回显标题
+  function renderList() {
+    const listWrap = document.getElementById('phrase-list-' + currentTab);
+    if (!listWrap) return;
+
+    const data = getData();
+    const activeCat = getActiveCat();
+    const top = (data.cats || []).find(c => c.name === activeCat);
+
+    listWrap.innerHTML = '';
+
+    if (!top) {
+      listWrap.innerHTML = `<div style="padding:20px;color:#999;">请选择一级分类</div>`;
+      return;
+    }
+
+    const seconds = Array.isArray(top.seconds) ? top.seconds : [];
+    if (!seconds.length) {
+      listWrap.innerHTML = `<div style="padding:20px;color:#999;">暂无二级分类</div>`;
+      return;
+    }
+
+    const acc = document.createElement('div');
+    acc.className = 'phrase-accordion';
+
+    seconds.forEach((sec, idx) => {
+      const secId = sec.id;
+      const secTitle = sec.title || '未命名';
+      const items = Array.isArray(sec.items) ? sec.items : [];
+
+      const itemEl = document.createElement('div');
+      itemEl.className = 'phrase-acc-item';
+      itemEl.dataset.secId = String(secId);
+
+      const header = document.createElement('div');
+      header.className = 'phrase-acc-header';
+      header.innerHTML = `
+      <span class="arrow">▾</span>
+      <span class="sec-title">${secTitle}</span>
+      <span class="sec-count">${items.length}</span>
+    `;
+
+      const body = document.createElement('div');
+      body.className = 'phrase-acc-body';
+
+      // 默认：第一个展开，其余折叠（你也可以改为全部展开）
+      if (idx !== 0) itemEl.classList.add('collapsed');
+
+      // 渲染短语项
+      if (!items.length) {
+        body.innerHTML = `<div class="phrase-empty">暂无话术</div>`;
+      } else {
+        const frag = document.createDocumentFragment();
+        items.forEach((t) => {
+          const el = document.createElement('div');
+          el.className = 'phrase-item';
+          el.dataset.content = String(t.content || '').replace(/"/g, '&quot;');
+          el.dataset.title = String(t.title || '').replace(/"/g, '&quot;');
+          el.dataset.id = t.id != null ? String(t.id) : '';
+          // ★ 增加：真实类别标题（你要求 typeTitle）
+          el.dataset.typeTitle = String(t.typeTitle || '').replace(/"/g, '&quot;');
+
+          el.title = '单击：粘贴内容；双击：粘贴并发送；右键：操作';
+
+          const titleDiv = document.createElement('div');
+          titleDiv.className = 'title';
+          titleDiv.textContent = (t.title || '').trim();
+
+          const textDiv = document.createElement('div');
+          textDiv.className = 'text';
+          textDiv.textContent = (t.content || '').trim();
+
+          el.appendChild(titleDiv);
+          el.appendChild(textDiv);
+          frag.appendChild(el);
+        });
+        body.appendChild(frag);
+      }
+
+      header.addEventListener('click', () => {
+        itemEl.classList.toggle('collapsed');
+      });
+
+      itemEl.appendChild(header);
+      itemEl.appendChild(body);
+      acc.appendChild(itemEl);
+    });
+
+    listWrap.appendChild(acc);
+
+    // 绑定点击/双击（仍然只粘贴内容）
+    if (!listWrap._eventsBound) {
+      let singleTimer = null;
+
+      listWrap.addEventListener('click', (e) => {
+        const item = e.target.closest('.phrase-item');
+        if (!item) return;
+        const content = item.dataset.content || '';
+        if (!content) return;
+
+        clearTimeout(singleTimer);
+        singleTimer = setTimeout(() => {
+          ipcRenderer.send('phrase:paste', content);
+          singleTimer = null;
+        }, 300);
+      });
+
+      listWrap.addEventListener('dblclick', (e) => {
+        const item = e.target.closest('.phrase-item');
+        if (!item) return;
+        const content = item.dataset.content || '';
+        if (!content) return;
+
+        if (singleTimer) {
+          clearTimeout(singleTimer);
+          singleTimer = null;
+        }
+        ipcRenderer.send('phrase:paste-send', content);
+      });
+
+      listWrap._eventsBound = true;
+    }
+  }
+  // 新增：编辑短语弹框（标题 + 内容），回显初始值，返回 { title, content } 或 null
+  async function uiEditPhraseDialog(initialTitle, initialContent) {
+    return new Promise(resolve => {
+      const mask = document.createElement('div');
+      mask.className = 'prompt-mask';
+      mask.innerHTML = `
       <div class="prompt-dialog" role="dialog" aria-modal="true" style="width:480px;max-width:90vw;">
         <div class="prompt-title" style="font-size:15px;margin-bottom:10px;">编辑短语</div>
         <div class="prompt-body" style="display:flex;flex-direction:column;gap:10px;">
@@ -467,171 +518,212 @@ async function uiEditPhraseDialog(initialTitle, initialContent) {
           <button class="btn-ok" type="button" disabled style="opacity:.5;cursor:not-allowed;">确定</button>
         </div>
       </div>`;
-    document.body.appendChild(mask);
+      document.body.appendChild(mask);
 
-    const dialog = mask.querySelector('.prompt-dialog');
-    const inputTitle = mask.querySelector('.phrase-title');
-    const inputContent = mask.querySelector('.phrase-content');
-    const btnOk = mask.querySelector('.btn-ok');
-    const btnCancel = mask.querySelector('.btn-cancel');
+      const dialog = mask.querySelector('.prompt-dialog');
+      const inputTitle = mask.querySelector('.phrase-title');
+      const inputContent = mask.querySelector('.phrase-content');
+      const btnOk = mask.querySelector('.btn-ok');
+      const btnCancel = mask.querySelector('.btn-cancel');
 
-    inputTitle.value = initialTitle || '';
-    inputContent.value = initialContent || '';
+      inputTitle.value = initialTitle || '';
+      inputContent.value = initialContent || '';
 
-    function updateState() {
-      const content = (inputContent.value || '').trim();
-      const changed = content !== (initialContent || '').trim() || (inputTitle.value || '').trim() !== (initialTitle || '').trim();
-      btnOk.disabled = !changed || !content; // 内容必填，且有改动才可提交
-      btnOk.style.opacity = (!btnOk.disabled ? '1' : '.5');
-      btnOk.style.cursor = (!btnOk.disabled ? 'pointer' : 'not-allowed');
-    }
-    inputTitle.addEventListener('input', updateState);
-    inputContent.addEventListener('input', updateState);
-    setTimeout(() => { inputContent.focus(); }, 0);
-    updateState();
+      function updateState() {
+        const content = (inputContent.value || '').trim();
+        const changed = content !== (initialContent || '').trim() || (inputTitle.value || '').trim() !== (
+          initialTitle || '').trim();
+        btnOk.disabled = !changed || !content; // 内容必填，且有改动才可提交
+        btnOk.style.opacity = (!btnOk.disabled ? '1' : '.5');
+        btnOk.style.cursor = (!btnOk.disabled ? 'pointer' : 'not-allowed');
+      }
+      inputTitle.addEventListener('input', updateState);
+      inputContent.addEventListener('input', updateState);
+      setTimeout(() => {
+        inputContent.focus();
+      }, 0);
+      updateState();
 
-    function close(val) {
-      if (mask && mask.parentNode) mask.parentNode.removeChild(mask);
-      resolve(val);
-    }
-    btnCancel.onclick = () => close(null);
-    btnOk.onclick = () => {
-      if (btnOk.disabled) return;
-      const title = (inputTitle.value || '').trim();
-      const content = (inputContent.value || '').trim();
-      close({ title, content });
-    };
-    mask.addEventListener('click', e => { if (e.target === mask) close(null); });
-    dialog.addEventListener('click', e => e.stopPropagation());
-    mask.addEventListener('keydown', e => {
-      if (e.key === 'Escape') close(null);
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !btnOk.disabled) btnOk.click();
+      function close(val) {
+        if (mask && mask.parentNode) mask.parentNode.removeChild(mask);
+        resolve(val);
+      }
+      btnCancel.onclick = () => close(null);
+      btnOk.onclick = () => {
+        if (btnOk.disabled) return;
+        const title = (inputTitle.value || '').trim();
+        const content = (inputContent.value || '').trim();
+        close({
+          title,
+          content
+        });
+      };
+      mask.addEventListener('click', e => {
+        if (e.target === mask) close(null);
+      });
+      dialog.addEventListener('click', e => e.stopPropagation());
+      mask.addEventListener('keydown', e => {
+        if (e.key === 'Escape') close(null);
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !btnOk.disabled) btnOk.click();
+      });
     });
-  });
-}
-  // 添加类别：成功后直接刷新远端数据（不做本地写入）
-// 如果选择创建一级类别（parentId=0）且已存在同名顶级类别，则错误提示并阻止提交
-async function addCategory() {
-  const useScope = getUseScopeForCurrent();
-  if (useScope === 0) { window.alert('公司话术不支持前端添加'); return; }
-
-  // 准备父类列表（小组取顶级；私人默认一级）
-  let parents = [];
-  if (useScope === 1) {
-    try {
-      const tops = await API.get('/api/front/content/teamTopTypes'); // [{id,title,...}]
-      parents = Array.isArray(tops?.data) ? tops.data.map(x => ({ id: Number(x.id), title: x.title })) : [];
-    } catch (e) {
-      console.warn('获取小组顶级类别失败：', e);
-      parents = [];
-    }
   }
-  // 默认加一个“无（创建一级）”选项
-  parents.unshift({ id: 0, title: '无（创建一级）' });
-
-  // 弹框：父类选择 + 单行名称
-  const formRes = await uiAddCategoryDialog({
-    parents,
-    tabLabel: TAB_KEYS[currentTab]
-  });
-  if (!formRes) return;
-  const { parentId, name } = formRes;
-  const finalName = (name || '').trim();
-  if (!finalName) return;
-
-  // 新增校验：当选择创建一级类别（parentId=0）时，检查当前 tab 的顶级类别是否已有同名，若有则报错并阻止提交
-  if (Number(parentId) === 0) {
-    const data = getData();
-    const cats = Array.isArray(data?.cats) ? data.cats : [];
-    const existedTopSame = cats.some(c => (c?.name || '').trim() === finalName);
-    if (existedTopSame) {
-      // 使用错误提示 toast（项目内已有 showToast）
-      showToast('已有相同的一级类别名称', { type: 'error', duration: 1500 });
+  // 添加类别：成功后直接刷新远端数据（不做本地写入）
+  // 如果选择创建一级类别（parentId=0）且已存在同名顶级类别，则错误提示并阻止提交
+  async function addCategory() {
+    const useScope = getUseScopeForCurrent();
+    if (useScope === 0) {
+      window.alert('公司话术不支持前端添加');
       return;
     }
-  }
 
-  const TYPE_CLASS_TEXT = 2;
-  try {
-    const payload = { useScope, title: finalName, typeClass: TYPE_CLASS_TEXT };
-    payload.pid = Number(parentId); // 有父类则创建二级；0 表示创建一级
-    await API.content.addByMe(payload);
+    // 准备父类列表（小组取顶级；私人默认一级）
+    let parents = [];
+    if (useScope === 1) {
+      try {
+        const tops = await API.get('/api/front/content/teamTopTypes'); // [{id,title,...}]
+        parents = Array.isArray(tops?.data) ? tops.data.map(x => ({
+          id: Number(x.id),
+          title: x.title
+        })) : [];
+      } catch (e) {
+        console.warn('获取小组顶级类别失败：', e);
+        parents = [];
+      }
+    }
+    // 默认加一个“无（创建一级）”选项
+    parents.unshift({
+      id: 0,
+      title: '无（创建一级）'
+    });
 
-    // 不再本地 cats.push / setActiveCat，直接强制从远端刷新（让后端数据为准）
-    await loadRemotePhrasesText(true);
-    renderCats();
-    renderList();
-  } catch (e) {
-    console.warn('创建类别失败：', e);
-    if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
-    showToast((e && e.message) || '创建类别失败', { type: 'error', duration: 1500 });
-  }
-}
+    // 弹框：父类选择 + 单行名称
+    const formRes = await uiAddCategoryDialog({
+      parents,
+      tabLabel: TAB_KEYS[currentTab]
+    });
+    if (!formRes) return;
+    const {
+      parentId,
+      name
+    } = formRes;
+    const finalName = (name || '').trim();
+    if (!finalName) return;
 
-  // 添加短语：不做本地 push，成功后刷新远端数据
-// 覆盖 addPhrase：新增“标题”输入框，提交时携带 { title, content } 两个字段
-async function addPhrase() {
-  const useScope = getUseScopeForCurrent();
-  if (useScope === 0) {
-    window.alert('公司话术不支持前端添加');
-    return;
-  }
-  const activeCat = getActiveCat();
-  if (!activeCat) {
-    window.alert('请先选择一个类别再添加短语');
-    return;
-  }
+    // 新增校验：当选择创建一级类别（parentId=0）时，检查当前 tab 的顶级类别是否已有同名，若有则报错并阻止提交
+    if (Number(parentId) === 0) {
+      const data = getData();
+      const cats = Array.isArray(data?.cats) ? data.cats : [];
+      const existedTopSame = cats.some(c => (c?.name || '').trim() === finalName);
+      if (existedTopSame) {
+        // 使用错误提示 toast（项目内已有 showToast）
+        showToast('已有相同的一级类别名称', {
+          type: 'error',
+          duration: 1500
+        });
+        return;
+      }
+    }
 
-  // 弹框：标题 + 内容
-  const phrase = await uiAddPhraseDialog({
-    catName: activeCat
-  });
-  if (!phrase) return;
-  const { title, content } = phrase;
-  const finalTitle = (title || '').trim();
-  const finalContent = (content || '').trim();
-  if (!finalContent) {
-    showToast('内容不能为空', { type: 'error', duration: 1500 });
-    return;
-  }
-
-  let typeId = allTypeIdMap[currentTab][activeCat];
-  const TYPE_CLASS_TEXT = 2;
-  try {
-    if (!typeId) {
-      // 若本地未缓存到该类别的 id，则走创建（后端会按 useScope+title 识别/创建类别）
-      await API.content.addByMe({
+    const TYPE_CLASS_TEXT = 2;
+    try {
+      const payload = {
         useScope,
-        title: finalTitle,       // 短语标题
-        content: finalContent,   // 短语内容
-        typeClass: TYPE_CLASS_TEXT,
-        // 注意：这里没有 contentTypeId，后端将根据 activeCat 创建或匹配类别（如你的后端需要 pid 或类别名，请相应扩展）
-      });
-    } else {
-      // 已知类别 id，直接向该类别添加短语
-      await API.content.addByMe({
-        useScope,
-        contentTypeId: typeId,   // 目标类别
-        title: finalTitle,       // 短语标题
-        content: finalContent,   // 短语内容
-        typeClass: TYPE_CLASS_TEXT,
+        title: finalName,
+        typeClass: TYPE_CLASS_TEXT
+      };
+      payload.pid = Number(parentId); // 有父类则创建二级；0 表示创建一级
+      await API.content.addByMe(payload);
+
+      // 不再本地 cats.push / setActiveCat，直接强制从远端刷新（让后端数据为准）
+      await loadRemotePhrasesText(true);
+      renderCats();
+      renderList();
+    } catch (e) {
+      console.warn('创建类别失败：', e);
+      if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
+      showToast((e && e.message) || '创建类别失败', {
+        type: 'error',
+        duration: 1500
       });
     }
-    await loadRemotePhrasesText(true); // 强制刷新当前tab数据
-  } catch (e) {
-    console.warn('添加短语失败：', e);
-    if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
-    showToast((e && e.message) || '添加短语失败', { type: 'error', duration: 1500 });
   }
-}
 
-// 新增：添加短语弹框（标题 + 内容），返回 { title, content } 或 null
-async function uiAddPhraseDialog(opts) {
-  const options = Object.assign({ catName: '' }, opts || {});
-  return new Promise(resolve => {
-    const mask = document.createElement('div');
-    mask.className = 'prompt-mask';
-    mask.innerHTML = `
+  // 添加短语：不做本地 push，成功后刷新远端数据
+  // 覆盖 addPhrase：新增“标题”输入框，提交时携带 { title, content } 两个字段
+  async function addPhrase() {
+    const useScope = getUseScopeForCurrent();
+    if (useScope === 0) {
+      window.alert('公司话术不支持前端添加');
+      return;
+    }
+    const activeCat = getActiveCat();
+    if (!activeCat) {
+      window.alert('请先选择一个类别再添加短语');
+      return;
+    }
+
+    // 弹框：标题 + 内容
+    const phrase = await uiAddPhraseDialog({
+      catName: activeCat
+    });
+    if (!phrase) return;
+    const {
+      title,
+      content
+    } = phrase;
+    const finalTitle = (title || '').trim();
+    const finalContent = (content || '').trim();
+    if (!finalContent) {
+      showToast('内容不能为空', {
+        type: 'error',
+        duration: 1500
+      });
+      return;
+    }
+
+    let typeId = allTypeIdMap[currentTab][activeCat];
+    const TYPE_CLASS_TEXT = 2;
+    try {
+      if (!typeId) {
+        // 若本地未缓存到该类别的 id，则走创建（后端会按 useScope+title 识别/创建类别）
+        await API.content.addByMe({
+          useScope,
+          title: finalTitle, // 短语标题
+          content: finalContent, // 短语内容
+          typeClass: TYPE_CLASS_TEXT,
+          // 注意：这里没有 contentTypeId，后端将根据 activeCat 创建或匹配类别（如你的后端需要 pid 或类别名，请相应扩展）
+        });
+      } else {
+        // 已知类别 id，直接向该类别添加短语
+        await API.content.addByMe({
+          useScope,
+          contentTypeId: typeId, // 目标类别
+          title: finalTitle, // 短语标题
+          content: finalContent, // 短语内容
+          typeClass: TYPE_CLASS_TEXT,
+        });
+      }
+      await loadRemotePhrasesText(true); // 强制刷新当前tab数据
+    } catch (e) {
+      console.warn('添加短语失败：', e);
+      if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
+      showToast((e && e.message) || '添加短语失败', {
+        type: 'error',
+        duration: 1500
+      });
+    }
+  }
+
+  // 新增：添加短语弹框（标题 + 内容），返回 { title, content } 或 null
+  async function uiAddPhraseDialog(opts) {
+    const options = Object.assign({
+      catName: ''
+    }, opts || {});
+    return new Promise(resolve => {
+      const mask = document.createElement('div');
+      mask.className = 'prompt-mask';
+      mask.innerHTML = `
       <div class="prompt-dialog" role="dialog" aria-modal="true" style="width:480px;max-width:90vw;">
         <div class="prompt-title" style="font-size:15px;margin-bottom:10px;">添加短语（${options.catName || ''}）</div>
         <div class="prompt-body" style="display:flex;flex-direction:column;gap:10px;">
@@ -649,44 +741,51 @@ async function uiAddPhraseDialog(opts) {
           <button class="btn-ok" type="button" disabled style="opacity:.5;cursor:not-allowed;">确定</button>
         </div>
       </div>`;
-    document.body.appendChild(mask);
+      document.body.appendChild(mask);
 
-    const dialog = mask.querySelector('.prompt-dialog');
-    const inputTitle = mask.querySelector('.phrase-title');
-    const inputContent = mask.querySelector('.phrase-content');
-    const btnOk = mask.querySelector('.btn-ok');
-    const btnCancel = mask.querySelector('.btn-cancel');
+      const dialog = mask.querySelector('.prompt-dialog');
+      const inputTitle = mask.querySelector('.phrase-title');
+      const inputContent = mask.querySelector('.phrase-content');
+      const btnOk = mask.querySelector('.btn-ok');
+      const btnCancel = mask.querySelector('.btn-cancel');
 
-    function updateState() {
-      const content = (inputContent.value || '').trim();
-      btnOk.disabled = !content;
-      btnOk.style.opacity = content ? '1' : '.5';
-      btnOk.style.cursor = content ? 'pointer' : 'not-allowed';
-    }
-    inputContent.addEventListener('input', updateState);
-    inputTitle.addEventListener('input', updateState);
-    updateState();
-    setTimeout(() => { inputContent.focus(); }, 0);
+      function updateState() {
+        const content = (inputContent.value || '').trim();
+        btnOk.disabled = !content;
+        btnOk.style.opacity = content ? '1' : '.5';
+        btnOk.style.cursor = content ? 'pointer' : 'not-allowed';
+      }
+      inputContent.addEventListener('input', updateState);
+      inputTitle.addEventListener('input', updateState);
+      updateState();
+      setTimeout(() => {
+        inputContent.focus();
+      }, 0);
 
-    function close(val) {
-      if (mask && mask.parentNode) mask.parentNode.removeChild(mask);
-      resolve(val);
-    }
-    btnCancel.onclick = () => close(null);
-    btnOk.onclick = () => {
-      if (btnOk.disabled) return;
-      const title = (inputTitle.value || '').trim();
-      const content = (inputContent.value || '').trim();
-      close({ title, content });
-    };
-    mask.addEventListener('click', e => { if (e.target === mask) close(null); });
-    dialog.addEventListener('click', e => e.stopPropagation());
-    mask.addEventListener('keydown', e => {
-      if (e.key === 'Escape') close(null);
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !btnOk.disabled) btnOk.click();
+      function close(val) {
+        if (mask && mask.parentNode) mask.parentNode.removeChild(mask);
+        resolve(val);
+      }
+      btnCancel.onclick = () => close(null);
+      btnOk.onclick = () => {
+        if (btnOk.disabled) return;
+        const title = (inputTitle.value || '').trim();
+        const content = (inputContent.value || '').trim();
+        close({
+          title,
+          content
+        });
+      };
+      mask.addEventListener('click', e => {
+        if (e.target === mask) close(null);
+      });
+      dialog.addEventListener('click', e => e.stopPropagation());
+      mask.addEventListener('keydown', e => {
+        if (e.key === 'Escape') close(null);
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !btnOk.disabled) btnOk.click();
+      });
     });
-  });
-}
+  }
 
   async function uiPrompt(options) {
     const opts = Object.assign({
@@ -790,7 +889,10 @@ async function uiAddPhraseDialog(opts) {
   }
   // 新增：添加类别弹框（父类下拉 + 单行文本），返回 { parentId, name } 或 null
   async function uiAddCategoryDialog(opts) {
-    const options = Object.assign({ parents: [], tabLabel: '' }, opts || {});
+    const options = Object.assign({
+      parents: [],
+      tabLabel: ''
+    }, opts || {});
     return new Promise(resolve => {
       const mask = document.createElement('div');
       mask.className = 'prompt-mask';
@@ -815,13 +917,13 @@ async function uiAddPhraseDialog(opts) {
           </div>
         </div>`;
       document.body.appendChild(mask);
-  
+
       const dialog = mask.querySelector('.prompt-dialog');
       const sel = mask.querySelector('.parent-select');
       const input = mask.querySelector('.cat-input');
       const btnOk = mask.querySelector('.btn-ok');
       const btnCancel = mask.querySelector('.btn-cancel');
-  
+
       function updateState() {
         const name = (input.value || '').trim();
         btnOk.disabled = !name;
@@ -830,8 +932,10 @@ async function uiAddPhraseDialog(opts) {
       }
       input.addEventListener('input', updateState);
       updateState();
-      setTimeout(() => { input.focus(); }, 0);
-  
+      setTimeout(() => {
+        input.focus();
+      }, 0);
+
       function close(val) {
         if (mask && mask.parentNode) mask.parentNode.removeChild(mask);
         resolve(val);
@@ -841,9 +945,14 @@ async function uiAddPhraseDialog(opts) {
         if (btnOk.disabled) return;
         const parentId = Number(sel.value || 0);
         const name = (input.value || '').trim();
-        close({ parentId, name });
+        close({
+          parentId,
+          name
+        });
       };
-      mask.addEventListener('click', e => { if (e.target === mask) close(null); });
+      mask.addEventListener('click', e => {
+        if (e.target === mask) close(null);
+      });
       dialog.addEventListener('click', e => e.stopPropagation());
       mask.addEventListener('keydown', e => {
         if (e.key === 'Escape') close(null);
@@ -921,121 +1030,97 @@ async function uiAddPhraseDialog(opts) {
 
 
   // 登录后从后端拉取当前页签的类别与话术（typeClass=2：文字）
-// 覆盖：loadRemotePhrasesText（含日志 + 兼容 types 返回的嵌套 type.data）
-async function loadRemotePhrasesText(force = false) {
-  const TYPE_CLASS_TEXT = 2;
-  try {
-    setPhrasesUnavailable(false);
-    const prevActive = getActiveCat(); // 记录当前激活
-    const resp = await API.content.types({ typeClass: TYPE_CLASS_TEXT });
-    const grouped = (resp && resp.data) || {};
-    console.log('[phrases] types resp grouped=', grouped);
+  // 覆盖：loadRemotePhrasesText（含日志 + 兼容 types 返回的嵌套 type.data）
+  async function loadRemotePhrasesText(force = false) {
+    try {
+      setPhrasesUnavailable(false);
 
-    let typesArr = [];
-    const tabKey = currentTab;
-    if (tabKey === 'corp') typesArr = grouped.company || grouped.corp || grouped['公司'] || [];
-    else if (tabKey === 'group') typesArr = grouped.team || grouped.group || grouped['小组'] || [];
-    else if (tabKey === 'private') typesArr = grouped.personal || grouped.private || grouped['私人'] || [];
-    console.log('[phrases] tabKey=', tabKey, 'typesArr.len=', Array.isArray(typesArr) ? typesArr.length : -1);
+      const useScope = getUseScopeForCurrent(); // corp=0 group=1 private=2
+      const prevActive = getActiveCat(); // 记录当前选中的一级标题
 
-    allTypeIdMap[tabKey] = {};
-    const cats = [];
-    (typesArr || []).forEach(t => {
-      const typeId = t.id || t.typeId || t.contentTypeId;
-      const title = t.title || t.name || ('分类-' + (typeId ?? ''));
-      const hasNested = !!(t && t.type && Array.isArray(t.type.data));
-      const nestedLen = hasNested ? t.type.data.length : 0;
-      console.log('[phrases] type item title=', title, 'id=', typeId, 'has nested=', hasNested, 'nested.len=', nestedLen);
+      const resp = await API.content.phraseTree({
+        useScope
+      });
+      const tree = (resp && resp.data) ? resp.data : {};
+      const tops = Array.isArray(tree.tops) ? tree.tops : [];
 
-      if (!typeId) return;
-      cats.push({ name: title, id: typeId, items: [], _loaded: false });
+      // cats: 一级分类列表（顶部彩色条）
+      const cats = tops.map(t => ({
+        id: t.id,
+        name: t.title,
+        // seconds: 二级折叠面板
+        seconds: Array.isArray(t.seconds) ? t.seconds : []
+      }));
 
-      // 兼容 types 返回的嵌套内容：t.type.data
-      if (hasNested) {
-        const last = cats[cats.length - 1]; // 刚 push 的类别
-        last.items = t.type.data.map(i => ({
-          id: i.id || i.contentId || i.cid,
-          title: (i.title || i.contentTitle || '').trim(),
-          text: (i.content || i.text || '').trim(), // 保持与 renderList 的 text 字段一致
-        })).filter(o => o.text);
-        last._loaded = true; // 已有内容，不再调用 list
-        console.log('[phrases] filled from types nested ->', last.name, 'items.len=', last.items.length);
-      }
+      // 供新增短语用：把“一级名称 -> 一级ID” 先存着（新增类别/新增短语时你还会用到）
+      allTypeIdMap[currentTab] = {};
+      cats.forEach(c => {
+        allTypeIdMap[currentTab][c.name] = c.id;
+      });
 
-      allTypeIdMap[tabKey][title] = typeId;
-    });
+      allData[currentTab] = {
+        cats
+      };
 
-    // 如果之前激活的类别不在远端返回（刚建还没刷新），把本地的插入进去
-    if (prevActive && !cats.find(c => c.name === prevActive)) {
-      const localExisting = allData[tabKey].cats.find(c => c.name === prevActive);
-      if (localExisting) {
-        cats.push({
-          name: localExisting.name,
-          id: localExisting.id || 0,
-          items: localExisting.items || [],
-          _loaded: localExisting._loaded || false
-        });
-      }
+      // 选中：优先保留之前选中的一级；否则选第一个
+      let active = prevActive && cats.find(c => c.name === prevActive) ? prevActive : (cats[0]?.name || '');
+      if (active && active !== getActiveCat()) setActiveCat(active);
+
+      renderCats();
+      renderList();
+      bindContextMenus();
+      if (cats.length > 0) setPhrasesUnavailable(false);
+    } catch (e) {
+      console.warn('[phrases] phraseTree load fail:', e);
+      if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
     }
-
-    allData[tabKey] = { cats };
-
-    // 选中：如果 prevActive 仍存在则保留，否则选第一个
-    let active = prevActive && cats.find(c => c.name === prevActive) ? prevActive : (cats[0]?.name || '');
-    if (active && active !== getActiveCat()) setActiveCat(active);
-
-    renderCats();
-    if (active) await loadCatItemsByName(active);
-    renderList();
-    bindContextMenus();
-    if (cats.length > 0) setPhrasesUnavailable(false);
-  } catch (e) {
-    console.warn('加载类别和话术失败：', e);
-    if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
   }
-}
 
-// 覆盖：loadCatItemsByName（含日志 + 兼容 list 返回嵌套结构）
-async function loadCatItemsByName(catName) {
-  const TYPE_CLASS_TEXT = 2;
-  const data = getData();
-  if (!data || !data.cats || !data.cats.length) return;
+  // 覆盖：loadCatItemsByName（含日志 + 兼容 list 返回嵌套结构）
+  async function loadCatItemsByName(catName) {
+    const TYPE_CLASS_TEXT = 2;
+    const data = getData();
+    if (!data || !data.cats || !data.cats.length) return;
 
-  const cat = data.cats.find(c => c.name === catName);
-  console.log('[phrases] loadCatItemsByName catName=', catName, 'cat.id=', cat?.id, 'alreadyLoaded=', !!cat?._loaded);
-  if (!cat || cat._loaded) return; // 已加载过则跳过
+    const cat = data.cats.find(c => c.name === catName);
+    console.log('[phrases] loadCatItemsByName catName=', catName, 'cat.id=', cat?.id, 'alreadyLoaded=', !!cat
+      ?._loaded);
+    if (!cat || cat._loaded) return; // 已加载过则跳过
 
-  const typeId = cat.id;
-  if (!typeId) return;
-  try {
-    const listResp = await API.content.list({ typeClass: TYPE_CLASS_TEXT, typeId });
-   // 替换 loadCatItemsByName 里解析 listResp 的片段为以下内容：
-   const raw = (listResp && listResp.data) || [];
-   // 情况1：data 直接是内容数组
-   let arr = Array.isArray(raw) ? raw : [];
-   // 情况2：data 是数组，但元素里包着 { type: { data: [...] } }
-   if (Array.isArray(raw) && raw.length === 1 && raw[0] && raw[0].type && Array.isArray(raw[0].type.data)) {
-     arr = raw[0].type.data;
-   }
-   // 情况3：data 是对象，内部有 { type: { data: [...] } }
-   if (!Array.isArray(raw) && raw && raw.type && Array.isArray(raw.type.data)) {
-     arr = raw.type.data;
-   }
-   
-   cat.items = arr.map(i => ({
-     id: i.id || i.contentId || i.cid,
-     title: (i.title || i.contentTitle || '').trim(),
-     text: (i.content || i.text || '').trim(), // renderList 使用 text 字段
-   })).filter(o => o.text);
-   
-   console.log('[phrases] cat.items.len=', cat.items.length, 'first=', cat.items[0]);
-   cat._loaded = true;
-   setPhrasesUnavailable(false);
-  } catch (e) {
-    console.warn('加载类别话术列表失败：', e);
-    if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
+    const typeId = cat.id;
+    if (!typeId) return;
+    try {
+      const listResp = await API.content.list({
+        typeClass: TYPE_CLASS_TEXT,
+        typeId
+      });
+      // 替换 loadCatItemsByName 里解析 listResp 的片段为以下内容：
+      const raw = (listResp && listResp.data) || [];
+      // 情况1：data 直接是内容数组
+      let arr = Array.isArray(raw) ? raw : [];
+      // 情况2：data 是数组，但元素里包着 { type: { data: [...] } }
+      if (Array.isArray(raw) && raw.length === 1 && raw[0] && raw[0].type && Array.isArray(raw[0].type.data)) {
+        arr = raw[0].type.data;
+      }
+      // 情况3：data 是对象，内部有 { type: { data: [...] } }
+      if (!Array.isArray(raw) && raw && raw.type && Array.isArray(raw.type.data)) {
+        arr = raw.type.data;
+      }
+
+      cat.items = arr.map(i => ({
+        id: i.id || i.contentId || i.cid,
+        title: (i.title || i.contentTitle || '').trim(),
+        text: (i.content || i.text || '').trim(), // renderList 使用 text 字段
+      })).filter(o => o.text);
+
+      console.log('[phrases] cat.items.len=', cat.items.length, 'first=', cat.items[0]);
+      cat._loaded = true;
+      setPhrasesUnavailable(false);
+    } catch (e) {
+      console.warn('加载类别话术列表失败：', e);
+      if (isServerUnavailableError(e)) setPhrasesUnavailable(true);
+    }
   }
-}
 
   // 新增：根据当前激活类别获取对象
   function getCurrentCatObj() {
@@ -1170,28 +1255,33 @@ async function loadCatItemsByName(catName) {
         if (!item) return;
         if (!canEditDelete(t)) return;
         e.preventDefault();
-    
+
         const id = item.dataset.id;
         const initialText = item.dataset.content || ''; // 内容
-        const initialTitle = item.dataset.title || '';  // 标题
+        const initialTitle = item.dataset.title || ''; // 标题
         if (!id) return;
-    
-        const items = [
-          {
+
+        const items = [{
             label: '编辑短语',
             act: 'edit',
             onClick: async () => {
               const edited = await uiEditPhraseDialog(initialTitle, initialText);
               if (!edited) return;
-              const { title, content } = edited;
+              const {
+                title,
+                content
+              } = edited;
               try {
                 const resp = await API.post('/api/front/content/updateContent', {
                   id: Number(id),
                   content, // 新内容
-                  title    // 新标题（确保后端 FrontUpdateContentReq 支持 title 字段）
+                  title // 新标题（确保后端 FrontUpdateContentReq 支持 title 字段）
                 });
                 if (!resp || resp.status !== 'success') {
-                  showToast(resp?.message || '修改失败', { type: 'error', duration: 1500 });
+                  showToast(resp?.message || '修改失败', {
+                    type: 'error',
+                    duration: 1500
+                  });
                   return;
                 }
                 // 本地立即更新并重渲染
@@ -1204,11 +1294,16 @@ async function loadCatItemsByName(catName) {
                   }
                 }
                 renderList();
-                showToast('修改成功', { type: 'success' });
+                showToast('修改成功', {
+                  type: 'success'
+                });
                 // 后台再拉一次该类别以校准（可选）
                 loadCatItemsByName(getActiveCat());
               } catch (err) {
-                showToast(err.message || '修改失败', { type: 'error', duration: 1500 });
+                showToast(err.message || '修改失败', {
+                  type: 'error',
+                  duration: 1500
+                });
               }
             }
           },
@@ -1223,10 +1318,11 @@ async function loadCatItemsByName(catName) {
                 danger: true
               });
               if (!ok) return;
-    
+
               // 本地先移除实现“立即消失”，失败再回滚
               const catObj = getCurrentCatObj();
-              let backup = null, idx = -1;
+              let backup = null,
+                idx = -1;
               if (catObj && Array.isArray(catObj.items)) {
                 idx = catObj.items.findIndex(x => String(x.id) === String(id));
                 if (idx >= 0) {
@@ -1236,16 +1332,23 @@ async function loadCatItemsByName(catName) {
                 }
               }
               try {
-                const resp = await API.post('/api/front/content/delContent', { id: Number(id) });
+                const resp = await API.post('/api/front/content/delContent', {
+                  id: Number(id)
+                });
                 if (!resp || resp.status !== 'success') {
                   if (backup && catObj && idx >= 0) {
                     catObj.items.splice(idx, 0, backup);
                     renderList();
                   }
-                  showToast(resp?.message || '删除失败', { type: 'error', duration: 1500 });
+                  showToast(resp?.message || '删除失败', {
+                    type: 'error',
+                    duration: 1500
+                  });
                   return;
                 }
-                showToast('删除成功', { type: 'success' });
+                showToast('删除成功', {
+                  type: 'success'
+                });
                 // 可选：后台同步刷新该类别
                 loadCatItemsByName(getActiveCat());
               } catch (err) {
@@ -1253,7 +1356,10 @@ async function loadCatItemsByName(catName) {
                   catObj.items.splice(idx, 0, backup);
                   renderList();
                 }
-                showToast(err.message || '删除失败', { type: 'error', duration: 1500 });
+                showToast(err.message || '删除失败', {
+                  type: 'error',
+                  duration: 1500
+                });
               }
             }
           }
@@ -1269,9 +1375,9 @@ async function loadCatItemsByName(catName) {
   } else {
     init();
   }
-  
-  window.__openPhrasesPanel = function () {
+
+  window.__openPhrasesPanel = function() {
     // 不改 currentTab，保持它是 corp / group / private 中上一次的值
-    switchTab(currentTab);  // 这里会 render + loadRemotePhrasesText()
+    switchTab(currentTab); // 这里会 render + loadRemotePhrasesText()
   };
 })();

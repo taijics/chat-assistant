@@ -10,9 +10,9 @@
    */
 
   // -------------------- 常量与本地存储键 --------------------
-   //const DEFAULT_BASE_URL = 'http://127.0.0.1:6003'; // 统一默认后端地址
- //const DEFAULT_BASE_URL = 'https://back.aiweiban.cn'; // 统一默认后端地址
-  const DEFAULT_BASE_URL = 'https://allback.aiweiban.cn'; // 统一默认后端地址
+  // const DEFAULT_BASE_URL = 'http://127.0.0.1:6003'; // 统一默认后端地址
+  const DEFAULT_BASE_URL = 'https://back.aiweiban.cn'; // 统一默认后端地址
+  // const DEFAULT_BASE_URL = 'https://allback.aiweiban.cn'; // 统一默认后端地址
   const LS_TOKEN = 'auth.token';
   const LS_TOKEN_NAME = 'auth.tokenName'; // 例如 "auth-token" 或 "Authorization"
   const LS_USER = 'auth.user';
@@ -336,6 +336,29 @@
         content, // 可选：要添加的话术内容或图片URL
         typeClass // 0图片 1表情 2文字（默认传 2）
       });
+    },
+
+    // 在 Content = { ... } 里新增
+    /** 话术树（一级->二级->内容），仅文字 GET /api/front/content/phraseTree?useScope=0|1|2 */
+    phraseTree({
+      useScope
+    } = {}) {
+      const url = '/api/front/phraseTree' + qs({
+        useScope
+      });
+      return get(url);
+    },
+
+    /** 图片/表情树（一级->二级->内容），GET /api/front/content/mediaTree?useScope=0|1|2&typeClass=0|1|3 */
+    mediaTree({
+      useScope,
+      typeClass
+    } = {}) {
+      const url = '/api/front/mediaTree' + qs({
+        useScope,
+        typeClass
+      });
+      return get(url);
     }
   };
 

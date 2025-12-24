@@ -24,18 +24,13 @@
   gap: 6px;
 }
 
+/* 每条话术卡片：去掉外边距、圆角，让它占满 */
 .phrase-item {
-  box-sizing: border-box;
-  padding: 8px 10px;
-  border: 1px solid #e6e8ef;
-  border-radius: 6px;
-  background: #fafbfe;
-  color: #222;
-  font-size: 13px;
-  line-height: 18px;
-  cursor: default;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
-  user-select: none;
+  margin: 0;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  background: #fff; /* 内容背景仍白色 */
 }
 
 .phrase-item:hover {
@@ -49,3 +44,95 @@
 
 /* 可选：让内容区在顶部工具栏下方留出点空白 */
 body { padding-top: 8px; }
+
+
+/* ===== 二级分类折叠面板（图1风格） ===== */
+.phrase-accordion {
+  gap: 0;
+  margin-top: 0;
+}
+
+.phrase-acc-item {
+  background: #fff;
+  border: 1px solid #e6e6e6;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 5px;
+}
+
+.phrase-acc-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px;
+  cursor: pointer;
+  user-select: none;
+  background: #f7f9fc;
+  
+}
+
+.phrase-acc-header .arrow {
+  width: 18px;
+  display: inline-block;
+  transform-origin: center;
+  transition: transform .15s ease;
+}
+
+.phrase-acc-header .sec-title {
+  color: #333;
+  flex: 1;
+}
+
+.phrase-acc-header .sec-count {
+  font-size: 12px;
+  color: #666;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 2px 8px;
+}
+
+.phrase-acc-body {
+  padding: 0;
+}
+.phrase-acc-item.collapsed .phrase-acc-body {
+  display: none;
+}
+.phrase-acc-item.collapsed .phrase-acc-header .arrow {
+  transform: rotate(-90deg);
+}
+
+.phrase-empty {
+  padding: 10px;
+  color: #999;
+  font-size: 13px;
+}
+/* 一行布局 */
+.phrase-item .row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+/* 标题：浅灰底 + 单行省略 */
+.phrase-item .p-title {
+  background: #f3f4f6;
+  color: #111;
+  padding: 8px 10px;
+  flex: 0 0 140px;          /* 标题固定宽度，你可调 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 内容：白底 + 单行省略 */
+.phrase-item .p-content {
+  background: #fff;
+  color: #333;
+  padding: 8px 10px;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-left: 1px solid #eee; /* 分隔线，可要可不要 */
+}
