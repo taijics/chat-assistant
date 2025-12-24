@@ -782,54 +782,58 @@
       }
     };
     // 监听主界面切换到“表情/图片”页签时，强制刷新 net 类别和列表
-    // 监听主界面切换到“表情/图片”页签时，确保一定请求一次网络表情类别和图片
-    // 当主界面切换到“表情/图片”页签时，强制重新请求 net 类别和内容
-    ipcRenderer.on('menu:switch-tab', async (_e, tabName) => {
-      if (tabName !== 'emojis') return;
-
-      console.log('[emojis] menu:switch-tab -> emojis, force reload cats & items');
-
-      // 每次从 net 开始
-      currentTab = 'net';
-      currentCat = '';
-
-      try {
-        // 1) 重新请求 net 的类别列表
-        await loadRemoteCats('net');
-        console.log('[emojis] loadRemoteCats(net) done, cats =', remoteCats.net);
-
-        // 2) 选中第一个类别
-        currentCat = remoteCats.net[0] || '';
-        console.log('[emojis] currentCat =', currentCat);
-
-        // 3) 先渲染 tab & 分类条
-        renderTabBar();
-        renderAllEmojiCatsBar();
-
-        // 4) 如果有类别，先清空列表，显示“加载中...”，再拉内容
-        const grid = document.getElementById('emoji-list-net');
-        if (grid) {
-          grid.innerHTML = `<div style="padding:20px;color:#999;">加载中...</div>`;
-        }
-
-        if (currentCat) {
-          // 标记为未加载，强制 list 请求
-          remoteLoaded.net[currentCat] = false;
-          await loadRemoteItems('net', currentCat);
-          console.log('[emojis] loadRemoteItems(net,', currentCat, ') done, count =',
-            (remoteItems.net[currentCat] || []).length);
-        }
-
-        // 5) 最终渲染所有列表（只会对 currentTab=net 生效）
-        renderAllEmojiLists();
-      } catch (err) {
-        console.warn('[emojis] menu:switch-tab emojis reload fail:', err && err.message);
-        // 失败时也至少把 UI 渲染出来，避免空白
-        renderTabBar();
-        renderAllEmojiCatsBar();
-        renderAllEmojiLists();
-      }
-    });
+   ipcRenderer.on('menu:switch-tab', async (_e, tabName) => {
+     if (tabName !== 'emojis') return;
+   
+     console.log('[emojis] menu:switch-tab -> emojis, force reload currentTab=', currentTab, 'currentCat=', currentCat);
+   
+     const tab = currentTab || 'net';
+     const prevCat = currentCat || '';
+   
+     // 1) 先把 UI 切到当前 tab（但不改 currentTab）
+     renderTabBar();
+     renderAllEmojiCatsBar();
+   
+     const grid = document.getElementById(`emoji-list-${tab}`);
+     if (grid) grid.innerHTML = `<div style="padding:20px;color:#999;">加载中...</div>`;
+   
+     try {
+       // 2) 确保 API 已经注入（避免“切过去但不请求”）
+       await waitForAPIReady(2000);
+   
+       // 3) 强制清空该 tab 的缓存，保证一定重新请求 cats/items
+       remoteCats[tab] = [];
+       remoteTypeIdMap[tab] = {};
+       remoteItems[tab] = {};
+       remoteLoaded[tab] = {};
+   
+       // 4) 重新拉分类
+       await loadRemoteCats(tab);
+   
+       // 5) 尽量保留原先选中的分类；如果不存在，就选第一个
+       if (prevCat && remoteCats[tab].includes(prevCat)) {
+         currentCat = prevCat;
+       } else {
+         currentCat = remoteCats[tab][0] || '';
+       }
+   
+       renderAllEmojiCatsBar();
+   
+       // 6) 如果有分类，强制拉一次该分类的内容
+       if (currentCat) {
+         remoteLoaded[tab][currentCat] = false; // 强制未加载
+         await loadRemoteItems(tab, currentCat);
+       }
+   
+       // 7) 最终渲染
+       renderAllEmojiLists();
+     } catch (err) {
+       console.warn('[emojis] force reload current tab fail:', err && err.message);
+       renderTabBar();
+       renderAllEmojiCatsBar();
+       renderAllEmojiLists();
+     }
+   });
   });
   // 新增：父类选择 + 类别名称 弹框，返回 { parentId, name } 或 null
   async function uiSelectParentTypeForEmoji(opts) {
