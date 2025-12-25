@@ -18,7 +18,31 @@ function registerFeatures(ctx) {
     state.insertBusy = false;
   }
 
-  // ===== helpers =====
+  // ===== small debug helpers =====
+  function logOnceSendKeys() {
+    if (state.__loggedSendKeys) return;
+    state.__loggedSendKeys = true;
+    try {
+      console.log('[BOOT] sendKeys keys=', Object.keys(sendKeys || {}));
+    } catch {}
+  }
+
+  function doCtrlV() {
+    try { sendKeys.sendCtrlV(); } catch (e) { console.warn('[insert] ctrl+v fail:', e && e.message); }
+  }
+  function doEnter() {
+    try { sendKeys.sendEnter(); } catch (e) { console.warn('[insert] enter fail:', e && e.message); }
+  }
+
+  function afterInsertUpdateZOrder(chatType) {
+    setTimeout(() => {
+      try {
+        if (!state.pinnedAlwaysOnTop) ctx.follow.updateZOrder(chatType);
+      } catch {}
+    }, 160);
+  }
+
+  // ===== foreground helpers (keep old behavior) =====
   async function ensureQQForegroundSimple() {
     try {
       if (deps.windowManager && deps.windowManager.getActiveWindow) {
@@ -36,32 +60,7 @@ function registerFeatures(ctx) {
     return ok;
   }
 
-  async function ensureWeChatForegroundSimple(target) {
-    // 目标是：尽量把“当前聊天窗”置前，然后给一点时间让输入框响应
-    let ok = false;
-    try {
-      // 1) 直接用窗口对象（最可靠）
-      if (target?.win) {
-        try { target.win.bringToTop && target.win.bringToTop(); } catch {}
-        try { target.win.focus && target.win.focus(); ok = true; } catch {}
-      }
-
-      // 2) 句柄兜底
-      if (!ok && isFinite(target?.hwnd)) {
-        try { ok = !!ctx.chat.focusWindow(target.hwnd); } catch {}
-      }
-
-      // 3) 类型兜底：直接找微信/企微窗
-      if (!ok) {
-        try { ctx.chat.focusWeChatWindow(); ok = true; } catch {}
-      }
-    } catch {}
-
-    await state.sleep(140);
-    return !!ok;
-  }
-
-  // QQ 输入框兜底（Tab 序列），保持你旧版 index3/index4 的风格
+  // QQ 输入框兜底（Tab 序列）：仅在 sendKeys 支持时启用
   async function focusQQInputFallback() {
     try {
       if (typeof sendKeys.sendTab !== 'function') return;
@@ -82,68 +81,98 @@ function registerFeatures(ctx) {
     } catch {}
   }
 
-  function doCtrlV() {
-    try { sendKeys.sendCtrlV(); } catch (e) { console.warn('[keys] ctrl+v fail:', e && e.message); }
-  }
-  function doEnter() {
-    try { sendKeys.sendEnter(); } catch (e) { console.warn('[keys] enter fail:', e && e.message); }
-  }
-
-  function afterInsertUpdateZOrder(chatType) {
-    setTimeout(() => {
-      try {
-        if (!state.pinnedAlwaysOnTop) ctx.follow.updateZOrder(chatType);
-      } catch {}
-    }, 160);
+  async function ensureWeChatForegroundSimple() {
+    // 旧版核心：不依赖 hwnd，直接用你已有的 focusWeChatWindow（内部有多层兜底）
+    try { ctx.chat.focusWeChatWindow(); } catch {}
+    await state.sleep(140);
+    return true;
   }
 
-  // 统一：更稳的 target 获取（避免助手窗口在前台导致拿不到聊天窗）
-  function getBestChatTarget() {
+  // ===== target resolve (IMPORTANT) =====
+  function rectLooksLikeMainChat(rect) {
+    if (!rect) return false;
+    const w = Number(rect.width), h = Number(rect.height);
+    if (!isFinite(w) || !isFinite(h)) return false;
+    // 你旧版/cc 里主窗过滤是 w>=400 && h>=300，这里保持一致，不要把 256x110 这种小浮窗当目标
+    return w >= 400 && h >= 300;
+  }
+
+  /**
+   * 关键：优先“吸附目标”，其次“前台目标”，最后“扫描兜底”
+   * - 吸附目标来自 state.wechatHWND/state.lastWechatPxRect/state.lastProcName（来自 wechat_monitor.cc 的 procName）
+   */
+  function resolveInsertTarget() {
+    // 1) 优先：吸附目标（只要 wechatMonitor 正在跟踪到一个像主窗的 rect）
     try {
-      // 优先：当前前台聊天窗
+      if (state.wechatFound && state.wechatHWND && rectLooksLikeMainChat(state.lastWechatPxRect)) {
+        const p = String(state.lastProcName || '').toLowerCase();
+        let type = null;
+
+        // wechat_monitor.cc 里发出来的 procName 是 baseLower（如 wechat.exe / wxwork.exe / qq.exe / qqnt.exe）
+        if (p.includes('qq')) type = 'qq';
+        else if (p.includes('wxwork') || p.includes('wecom')) type = 'enterprise';
+        else if (p.includes('wechat') || p.includes('weixin')) type = 'wechat';
+        else {
+          // 不认识就先当 wechat（更符合你“吸附窗体”默认是微信系的）
+          type = 'wechat';
+        }
+
+        return { type, source: 'docked', hwnd: state.wechatHWND, rect: state.lastWechatPxRect };
+      }
+    } catch {}
+
+    // 2) 其次：前台就是聊天窗（qq/wechat/enterprise）
+    try {
       const fg = ctx.chat.getForegroundChatTarget?.();
-      if (fg && fg.type) return fg;
+      if (fg && fg.type) return { ...fg, source: 'foreground' };
+    } catch {}
 
-      // 兜底：已识别/可吸附的聊天窗
-      const docked = ctx.chat.resolveDockedChatTarget?.();
-      if (docked && docked.type) return docked;
+    // 3) 兜底：扫描一个聊天窗
+    try {
+      const any = ctx.chat.resolveDockedChatTarget?.();
+      if (any && any.type) return { ...any, source: 'scan' };
+    } catch {}
 
-      return null;
-    } catch {
-      return null;
-    }
+    return null;
   }
 
-  // ===== phrase:paste (单击只粘贴) =====
+  // ===== phrase:paste =====
   ipcMain.on('phrase:paste', async (_e, text) => {
+    logOnceSendKeys();
+    console.log('[IPC] phrase:paste received', { textType: typeof text, len: (text || '').length });
+
     if (!text) return;
     if (!canStartInsert()) return;
 
     try {
       clipboard.writeText(String(text));
 
-      const target = getBestChatTarget();
+      const target = resolveInsertTarget();
       if (!target || !target.type) {
-        console.warn('[phrase] no chat target resolved');
+        console.warn('[phrase:paste] no target resolved');
         return;
       }
+      console.log('[phrase:paste] target=', { type: target.type, source: target.source });
 
       if (target.type === 'qq') {
         await ensureQQForegroundSimple();
 
-        // 先尝试 qq-focus-paste.exe（可选）
-        try { await ctx.clipboard.runQqFocusPaste('paste'); } catch {}
+        // 可选加速器（与旧版一致）
+        try {
+          const okExe = await ctx.clipboard.runQqFocusPaste('paste');
+          console.log('[qqpaste] okExe=', okExe);
+        } catch (e) {
+          console.warn('[qqpaste] run error:', e && e.message);
+        }
 
-        // 再做输入框聚焦兜底
+        // QQ 输入框兜底 + Ctrl+V
         await focusQQInputFallback();
         await state.sleep(60);
-
         doCtrlV();
       } else {
-        // 微信/企业微信：关键是要先确保微信在前台
-        await ensureWeChatForegroundSimple(target);
+        // wechat / enterprise：严格按旧版策略 -> focusWeChatWindow + Ctrl+V
+        await ensureWeChatForegroundSimple();
         await state.sleep(40);
-
         doCtrlV();
       }
 
@@ -155,38 +184,45 @@ function registerFeatures(ctx) {
     }
   });
 
-  // ===== phrase:paste-send (双击粘贴+发送) =====
+  // ===== phrase:paste-send =====
   ipcMain.on('phrase:paste-send', async (_e, text) => {
+    logOnceSendKeys();
+    console.log('[IPC] phrase:paste-send received', { textType: typeof text, len: (text || '').length });
+
     if (!text) return;
     if (!canStartInsert()) return;
 
     try {
       clipboard.writeText(String(text));
 
-      const target = getBestChatTarget();
+      const target = resolveInsertTarget();
       if (!target || !target.type) {
-        console.warn('[phrase] no chat target resolved');
+        console.warn('[phrase:paste-send] no target resolved');
         return;
       }
+      console.log('[phrase:paste-send] target=', { type: target.type, source: target.source });
 
       if (target.type === 'qq') {
         await ensureQQForegroundSimple();
 
-        // 先尝试 qq-focus-paste.exe（可能已完成 paste+send）
-        try { await ctx.clipboard.runQqFocusPaste('paste-send'); } catch {}
+        // 可选：qq-focus-paste.exe（可能已经 paste+send）
+        try {
+          const okExe = await ctx.clipboard.runQqFocusPaste('paste-send');
+          console.log('[qqpaste] okExe=', okExe);
+        } catch (e) {
+          console.warn('[qqpaste] run error:', e && e.message);
+        }
 
-        // 保持旧版“宁可重复也要成功”的兜底：Ctrl+V + Enter
+        // 保持旧版“宁可重复也要成功”的策略：再 Ctrl+V + Enter
         await focusQQInputFallback();
         await state.sleep(60);
-
         doCtrlV();
         await state.sleep(110);
         doEnter();
       } else {
-        // 微信/企业微信：先确保前台，再 Ctrl+V + Enter
-        await ensureWeChatForegroundSimple(target);
+        // wechat / enterprise
+        await ensureWeChatForegroundSimple();
         await state.sleep(40);
-
         doCtrlV();
         await state.sleep(100);
         doEnter();
@@ -200,7 +236,7 @@ function registerFeatures(ctx) {
     }
   });
 
-  // ===== emoji paste =====
+  // ===== emoji paste (保持你现有逻辑，只把目标选择也改成“吸附优先”) =====
   async function pasteEmojiInternal(src, sendNow) {
     if (!src) return;
 
@@ -215,7 +251,7 @@ function registerFeatures(ctx) {
       state.lastGifPasteAt = now;
     }
 
-    const target = getBestChatTarget();
+    const target = resolveInsertTarget();
     const chatType = target?.type || null;
 
     // gif-file branch
@@ -232,7 +268,7 @@ function registerFeatures(ctx) {
       }
 
       if (chatType === 'qq') await ensureQQForegroundSimple();
-      else await ensureWeChatForegroundSimple(target);
+      else await ensureWeChatForegroundSimple();
 
       setTimeout(() => {
         try { sendKeys.sendCtrlV(); } catch {}
@@ -256,7 +292,7 @@ function registerFeatures(ctx) {
           const placed = await ctx.clipboard.ensureImageInClipboard(again.buffer, 'png');
           if (placed.type === 'image') {
             if (chatType === 'qq') await ensureQQForegroundSimple();
-            else await ensureWeChatForegroundSimple(target);
+            else await ensureWeChatForegroundSimple();
 
             setTimeout(() => {
               try { sendKeys.sendCtrlV(); } catch {}
@@ -278,7 +314,7 @@ function registerFeatures(ctx) {
     // image/text
     if (result.type === 'image' || result.type === 'text') {
       if (chatType === 'qq') await ensureQQForegroundSimple();
-      else await ensureWeChatForegroundSimple(target);
+      else await ensureWeChatForegroundSimple();
 
       setTimeout(() => {
         try { sendKeys.sendCtrlV(); } catch {}
