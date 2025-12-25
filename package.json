@@ -1,7 +1,7 @@
 {
   "name": "chat-assistant",
   "version": "1.0.0",
-  "description": "微伴",
+  "description": "燃点AI",
   "author": "天作智合",
   "main": "main/index.js",
   "packageManager": "pnpm@9.0.0",
@@ -18,7 +18,7 @@
   },
   "build": {
     "appId": "com.wxchat.chatassistant",
-    "productName": "微伴",
+    "productName": "燃点AI",
     "directories": {
       "buildResources": "app-build",
       "output": "dist"
