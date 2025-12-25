@@ -506,7 +506,7 @@
         <div class="prompt-body" style="display:flex;flex-direction:column;gap:10px;">
           <div class="field">
             <label style="display:block;font-size:13px;color:#555;margin-bottom:6px;">标题</label>
-            <input type="text" class="phrase-title" placeholder="请输入标题（可选）" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;" />
+            <input type="text" class="phrase-title" placeholder="请输入标题（可选）" style="width:95%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;" />
           </div>
           <div class="field">
             <label style="display:block;font-size:13px;color:#555;margin-bottom:6px;">内容</label>
@@ -729,7 +729,7 @@
         <div class="prompt-body" style="display:flex;flex-direction:column;gap:10px;">
           <div class="field">
             <label style="display:block;font-size:13px;color:#555;margin-bottom:6px;">标题</label>
-            <input type="text" class="phrase-title" placeholder="请输入标题（可选）" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;" />
+            <input type="text" class="phrase-title" placeholder="请输入标题（可选）" style="width:95%;padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;" />
           </div>
           <div class="field">
             <label style="display:block;font-size:13px;color:#555;margin-bottom:6px;">内容</label>
