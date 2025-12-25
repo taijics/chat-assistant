@@ -10,8 +10,8 @@
    */
 
   // -------------------- 常量与本地存储键 --------------------
-  const DEFAULT_BASE_URL = 'http://127.0.0.1:6003'; // 统一默认后端地址
-   //const DEFAULT_BASE_URL = 'https://back.aiweiban.cn'; // 统一默认后端地址
+  // const DEFAULT_BASE_URL = 'http://127.0.0.1:6003'; // 统一默认后端地址
+  const DEFAULT_BASE_URL = 'https://back.aiweiban.cn'; // 统一默认后端地址
   // const DEFAULT_BASE_URL = 'https://allback.aiweiban.cn'; // 统一默认后端地址
   const LS_TOKEN = 'auth.token';
   const LS_TOKEN_NAME = 'auth.tokenName'; // 例如 "auth-token" 或 "Authorization"
