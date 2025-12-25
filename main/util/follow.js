@@ -94,6 +94,25 @@ function initFollow(ctx) {
     if (nextX > maxX) nextX = maxX;
 
     if (isCurrentChatWeChat()) nextX -= 7;
+    // DEBUG: computeDockX details (throttle)
+    state.__dbgDockAt = state.__dbgDockAt || 0;
+    const now2 = Date.now();
+    if (now2 - state.__dbgDockAt > 800) {
+      state.__dbgDockAt = now2;
+      try {
+        console.log('[follow.computeDockX]', {
+          pxRect,
+          width,
+          dockSide: state.dockSide,
+          wechatLeftDip,
+          wechatRightDip,
+          wa: { x: wa.x, y: wa.y, w: wa.width, h: wa.height },
+          s,
+          gapDip,
+          nextX
+        });
+      } catch {}
+    }
     return nextX;
   }
 
@@ -104,6 +123,22 @@ function initFollow(ctx) {
     const maxAllowed = Math.max(state.MIN_HEIGHT, (dip.display.workArea?.height || rawHeight) - state.MAX_ASSISTANT_HEIGHT_MARGIN);
     if (rawHeight > maxAllowed * 1.25) return state.lastStableAssistantHeight;
     const h = ctx.util.clamp(rawHeight, state.MIN_HEIGHT, maxAllowed);
+    // DEBUG: height calc (throttle)
+    state.__dbgHAt = state.__dbgHAt || 0;
+    const now3 = Date.now();
+    if (now3 - state.__dbgHAt > 800) {
+      state.__dbgHAt = now3;
+      try {
+        console.log('[follow.height]', {
+          pxRect,
+          dipH: dip.height,
+          min: state.MIN_HEIGHT,
+          maxAllowed,
+          chosen: h,
+          lastStable: state.lastStableAssistantHeight
+        });
+      } catch {}
+    }
     state.lastStableAssistantHeight = h;
     return h;
   }
@@ -141,6 +176,20 @@ function initFollow(ctx) {
     const dip = pxToDipRect(pxRect);
     const wa = dip.display.workArea;
     if (!wa) return false;
+    // DEBUG: isNearFull details (throttle)
+    state.__dbgNearFullAt = state.__dbgNearFullAt || 0;
+    const now = Date.now();
+    if (now - state.__dbgNearFullAt > 800) {
+      state.__dbgNearFullAt = now;
+      try {
+        console.log('[follow.isNearFull]', {
+          pxRect,
+          dip: { x: dip.x, y: dip.y, w: dip.width, h: dip.height },
+          wa: { x: wa.x, y: wa.y, w: wa.width, h: wa.height },
+          scale: dip.display.scaleFactor
+        });
+      } catch {}
+    }
     return dip.width >= wa.width * 0.9 && dip.height >= wa.height * 0.9;
   }
 
@@ -273,15 +322,52 @@ function initFollow(ctx) {
       } catch {}
     }, state.ANIMATION_INTERVAL);
   }
+function startForegroundFollow() {
+  if (state.fgFollowTimer) clearInterval(state.fgFollowTimer);
 
-  function startForegroundFollow() {
-    if (state.fgFollowTimer) clearInterval(state.fgFollowTimer);
-    state.fgFollowTimer = setInterval(() => {
-      if (state.quitting) return;
-      state.isWechatActive = computeIsWechatActive();
-      if (state.isWechatActive) updateZOrder();
-    }, state.FG_CHECK_INTERVAL);
-  }
+  state.fgFollowTimer = setInterval(() => {
+    if (state.quitting) return;
+
+    // 计算当前前台是否是聊天窗（微信/QQ/企微）
+    const activeIsChat = computeIsWechatActive();
+    state.isWechatActive = activeIsChat;
+
+    // DEBUG：每 1 秒打印一次状态（避免刷屏）
+    state.__dbgFgAt = state.__dbgFgAt || 0;
+    const now = Date.now();
+    if (now - state.__dbgFgAt > 1000) {
+      state.__dbgFgAt = now;
+      let activeHwnd = null;
+      let activeTitle = '';
+      let activeProc = '';
+      try {
+        const aw = deps.windowManager?.getActiveWindow?.();
+        if (aw) {
+          activeHwnd = Number(aw.handle);
+          activeTitle = String(aw.getTitle?.() || '');
+          activeProc = String(aw.process?.name || '');
+        }
+      } catch {}
+
+      console.log('[fgFollow]', {
+        activeIsChat,
+        activeHwnd,
+        activeTitle,
+        activeProc,
+        trackedHWND: state.wechatHWND,
+        wechatFound: state.wechatFound,
+        pinnedAlwaysOnTop: state.pinnedAlwaysOnTop
+      });
+    }
+
+    // 关键改动：
+    // 只要当前前台是聊天窗，并且我们有 trackedHWND，就尝试把助手插到聊天窗后面
+    // 这样“聊天窗在最上层 -> 助手也到最上层（紧贴其后）”
+    if (activeIsChat && state.wechatFound && state.wechatHWND && !state.pinnedAlwaysOnTop) {
+      updateZOrder(); // chatType 可留空
+    }
+  }, state.FG_CHECK_INTERVAL);
+}
 
   ctx.follow = {
     findDisplayForPhysicalRect,

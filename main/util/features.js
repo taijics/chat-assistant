@@ -101,40 +101,51 @@ function registerFeatures(ctx) {
    * 关键：优先“吸附目标”，其次“前台目标”，最后“扫描兜底”
    * - 吸附目标来自 state.wechatHWND/state.lastWechatPxRect/state.lastProcName（来自 wechat_monitor.cc 的 procName）
    */
-  function resolveInsertTarget() {
-    // 1) 优先：吸附目标（只要 wechatMonitor 正在跟踪到一个像主窗的 rect）
-    try {
-      if (state.wechatFound && state.wechatHWND && rectLooksLikeMainChat(state.lastWechatPxRect)) {
-        const p = String(state.lastProcName || '').toLowerCase();
-        let type = null;
+function resolveInsertTarget() {
+  // 1) 优先：吸附目标（以 wechatMonitor 跟踪的 hwnd 为准）
+  try {
+    if (state.wechatFound && state.wechatHWND && rectLooksLikeMainChat(state.lastWechatPxRect)) {
+      // 用 hwnd 去 windowManager 里找窗口并分类，避免 lastProcName 被污染导致误判 qq
+      const typeByHwnd = ctx.chat.classifyHwndType?.(state.wechatHWND);
 
-        // wechat_monitor.cc 里发出来的 procName 是 baseLower（如 wechat.exe / wxwork.exe / qq.exe / qqnt.exe）
+      // 如果 hwnd 分类失败，再用 lastProcName 兜底（但优先级降低）
+      let type = typeByHwnd;
+      if (!type) {
+        const p = String(state.lastProcName || '').toLowerCase();
         if (p.includes('qq')) type = 'qq';
         else if (p.includes('wxwork') || p.includes('wecom')) type = 'enterprise';
         else if (p.includes('wechat') || p.includes('weixin')) type = 'wechat';
-        else {
-          // 不认识就先当 wechat（更符合你“吸附窗体”默认是微信系的）
-          type = 'wechat';
-        }
-
-        return { type, source: 'docked', hwnd: state.wechatHWND, rect: state.lastWechatPxRect };
       }
-    } catch {}
 
-    // 2) 其次：前台就是聊天窗（qq/wechat/enterprise）
-    try {
-      const fg = ctx.chat.getForegroundChatTarget?.();
-      if (fg && fg.type) return { ...fg, source: 'foreground' };
-    } catch {}
+      // 最终兜底：当成 wechat（避免错误切去 QQ）
+      if (!type) type = 'wechat';
 
-    // 3) 兜底：扫描一个聊天窗
-    try {
-      const any = ctx.chat.resolveDockedChatTarget?.();
-      if (any && any.type) return { ...any, source: 'scan' };
-    } catch {}
+      console.log('[resolveInsertTarget] docked', {
+        hwnd: state.wechatHWND,
+        typeByHwnd,
+        lastProcName: state.lastProcName,
+        finalType: type,
+        rect: state.lastWechatPxRect
+      });
 
-    return null;
-  }
+      return { type, source: 'docked', hwnd: state.wechatHWND, rect: state.lastWechatPxRect };
+    }
+  } catch {}
+
+  // 2) 其次：前台就是聊天窗（qq/wechat/enterprise）
+  try {
+    const fg = ctx.chat.getForegroundChatTarget?.();
+    if (fg && fg.type) return { ...fg, source: 'foreground' };
+  } catch {}
+
+  // 3) 兜底：扫描一个聊天窗
+  try {
+    const any = ctx.chat.resolveDockedChatTarget?.();
+    if (any && any.type) return { ...any, source: 'scan' };
+  } catch {}
+
+  return null;
+}
 
   // ===== phrase:paste =====
   ipcMain.on('phrase:paste', async (_e, text) => {

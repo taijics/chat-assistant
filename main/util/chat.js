@@ -27,7 +27,18 @@ function initChat(ctx) {
       return null;
     }
   }
-
+  function classifyHwndType(hwnd) {
+    try {
+      const h = Number(hwnd);
+      if (!h || !windowManager?.getWindows) return null;
+      const wins = windowManager.getWindows() || [];
+      const w = wins.find(x => Number(x.handle) === h);
+      if (!w) return null;
+      return classifyWindowType(w, 'hwnd:' + h);
+    } catch {
+      return null;
+    }
+  }
   function focusWindow(targetWinOrHandle) {
     try {
       if (!windowManager || !windowManager.getWindows) return false;
@@ -193,6 +204,7 @@ function initChat(ctx) {
   ctx.chat = {
     classifyWindowType,
     focusWindow,
+    classifyHwndType,
     focusWeChatWindow,
     focusQQMainWindow,
     resolveDockedChatTarget,

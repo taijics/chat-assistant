@@ -1,25 +1,58 @@
-const { app } = require('electron');
+const {
+  app
+} = require('electron');
 const ocr = require('./python-ocr');
 app.setPath('userData', 'D:\\chat-assistant-userdata');
 
 const electron = require('electron');
-const { BrowserWindow, ipcMain, screen, dialog, shell, clipboard, Menu, nativeImage } = electron;
+const {
+  BrowserWindow,
+  ipcMain,
+  screen,
+  dialog,
+  shell,
+  clipboard,
+  Menu,
+  nativeImage
+} = electron;
 
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const { exec, spawnSync } = require('child_process');
+const {
+  exec,
+  spawnSync
+} = require('child_process');
 
-const { createState } = require('./util/state');
-const { initWindows } = require('./util/windows');
-const { initChat } = require('./util/chat');
-const { initFollow } = require('./util/follow');
-const { initClipboard } = require('./util/clipboard');
-const { registerIpc } = require('./util/ipc');
-const { registerFeatures } = require('./util/features');
+const {
+  createState
+} = require('./util/state');
+const {
+  initWindows
+} = require('./util/windows');
+const {
+  initChat
+} = require('./util/chat');
+const {
+  initFollow
+} = require('./util/follow');
+const {
+  initClipboard
+} = require('./util/clipboard');
+const {
+  registerIpc
+} = require('./util/ipc');
+const {
+  registerFeatures
+} = require('./util/features');
 
-function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
-function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(n, a, b) {
+  return Math.max(a, Math.min(b, n));
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
 
 // wechatMonitor 自动探测（保持原逻辑）
 let wechatMonitor;
@@ -33,27 +66,60 @@ let wechatMonitor;
     '../wechat/wechatMonitor'
   ];
   for (const p of tryPaths) {
-    try { wechatMonitor = require(p); return; } catch {}
+    try {
+      wechatMonitor = require(p);
+      return;
+    } catch {}
   }
   console.warn('[wechatMonitor] module not found. Using stub.');
-  wechatMonitor = { start: () => {}, stop: () => {}, setZOrder: () => {} };
+  wechatMonitor = {
+    start: () => {},
+    stop: () => {},
+    setZOrder: () => {}
+  };
 })();
 
 let registerAimodelsHandlers = () => {};
-try { ({ registerAimodelsHandlers } = require('./aimodels')); } catch {}
+try {
+  ({
+    registerAimodelsHandlers
+  } = require('./aimodels'));
+} catch {}
 let registerAiHandlers = () => {};
-try { ({ registerAiHandlers } = require('./ai-coze')); } catch {}
+try {
+  ({
+    registerAiHandlers
+  } = require('./ai-coze'));
+} catch {}
 
-let sendKeys = { sendCtrlV() {}, sendEnter() {} };
-try { sendKeys = require('../utils/send-keys'); } catch {
-  try { sendKeys = require('./utils/send-keys'); } catch {}
+let sendKeys = {
+  sendCtrlV() {},
+  sendEnter() {}
+};
+try {
+  sendKeys = require('../utils/send-keys');
+} catch {
+  try {
+    sendKeys = require('./utils/send-keys');
+  } catch {}
   console.log('[BOOT] sendKeys keys=', Object.keys(sendKeys), 'sendCtrlV=', typeof sendKeys.sendCtrlV);
 }
 
 let windowManager = null;
-try { ({ windowManager } = require('node-window-manager')); } catch (e) {
+try {
+  ({
+    windowManager
+  } = require('node-window-manager'));
+} catch (e) {
   console.warn('[deps] node-window-manager not loaded:', e && e.message);
-  windowManager = { getActiveWindow() { return null; }, getWindows() { return []; } };
+  windowManager = {
+    getActiveWindow() {
+      return null;
+    },
+    getWindows() {
+      return [];
+    }
+  };
 }
 
 // ===== state center =====
@@ -66,18 +132,31 @@ const realAppQuit = app.quit.bind(app);
 const realAppExit = (app.exit ? app.exit.bind(app) : (code) => {});
 const realProcExit = process.exit.bind(process);
 
-function enableQuit() { state.allowQuit = true; }
-app.quit = () => { if (state.allowQuit) return realAppQuit(); };
-app.exit = (code) => { if (state.allowQuit) return realAppExit(code); };
-process.exit = (code) => { if (state.allowQuit) return realProcExit(code); };
+function enableQuit() {
+  state.allowQuit = true;
+}
+app.quit = () => {
+  if (state.allowQuit) return realAppQuit();
+};
+app.exit = (code) => {
+  if (state.allowQuit) return realAppExit(code);
+};
+process.exit = (code) => {
+  if (state.allowQuit) return realProcExit(code);
+};
 
 // ===== ctx (dependency injection) =====
 const ctx = {
   state,
-  util: { clamp, lerp },
+  util: {
+    clamp,
+    lerp
+  },
   deps: {
     electron,
-    electronApp: { app },
+    electronApp: {
+      app
+    },
     wechatMonitor,
     windowManager,
     sendKeys,
@@ -105,12 +184,26 @@ ctx.lifecycle = {
   cleanupAndQuit() {
     if (state.quitting) return;
     state.quitting = true;
-    if (state.animationTimer) { clearInterval(state.animationTimer); state.animationTimer = null; }
-    if (state.fgFollowTimer) { clearInterval(state.fgFollowTimer); state.fgFollowTimer = null; }
-    try { wechatMonitor.stop && wechatMonitor.stop(); } catch {}
-    try { if (state.mainWindow && !state.mainWindow.isDestroyed()) state.mainWindow.destroy(); } catch {}
-    try { if (state.miniWindow && !state.miniWindow.isDestroyed()) state.miniWindow.destroy(); } catch {}
-    try { if (state.keeperWindow && !state.keeperWindow.isDestroyed()) state.keeperWindow.destroy(); } catch {}
+    if (state.animationTimer) {
+      clearInterval(state.animationTimer);
+      state.animationTimer = null;
+    }
+    if (state.fgFollowTimer) {
+      clearInterval(state.fgFollowTimer);
+      state.fgFollowTimer = null;
+    }
+    try {
+      wechatMonitor.stop && wechatMonitor.stop();
+    } catch {}
+    try {
+      if (state.mainWindow && !state.mainWindow.isDestroyed()) state.mainWindow.destroy();
+    } catch {}
+    try {
+      if (state.miniWindow && !state.miniWindow.isDestroyed()) state.miniWindow.destroy();
+    } catch {}
+    try {
+      if (state.keeperWindow && !state.keeperWindow.isDestroyed()) state.keeperWindow.destroy();
+    } catch {}
     realAppQuit();
   }
 };
@@ -126,11 +219,18 @@ ctx.misc = {
           );
         } catch {}
       }
-      if (!data) data = '# 导出内容\n\n当前页面未提供导出实现（__exportChatData）。\n请在渲染进程定义 window.__exportChatData() 返回 Markdown 文本。';
-      const { canceled, filePath } = await dialog.showSaveDialog({
+      if (!data) data =
+        '# 导出内容\n\n当前页面未提供导出实现（__exportChatData）。\n请在渲染进程定义 window.__exportChatData() 返回 Markdown 文本。';
+      const {
+        canceled,
+        filePath
+      } = await dialog.showSaveDialog({
         title: '导出聊天为 Markdown',
         defaultPath: 'chat-export.md',
-        filters: [{ name: 'Markdown', extensions: ['md'] }]
+        filters: [{
+          name: 'Markdown',
+          extensions: ['md']
+        }]
       });
       if (!canceled && filePath) fs.writeFileSync(filePath, data, 'utf8');
     } catch (e) {
@@ -147,7 +247,10 @@ ctx.misc = {
       height: 320,
       resizable: false,
       title: '设置',
-      webPreferences: { nodeIntegration: true, contextIsolation: false }
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false
+      }
     });
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`
       <!doctype html><html><head><meta charset="utf-8"><title>设置</title>
@@ -184,14 +287,21 @@ ctx.misc = {
 
   isAssistantDocked() {
     try {
-      if (!state.wechatFound || !state.lastWechatPxRect || !state.mainWindow || state.mainWindow.isDestroyed()) return false;
+      if (!state.wechatFound || !state.lastWechatPxRect || !state.mainWindow || state.mainWindow.isDestroyed())
+        return false;
       if (!state.mainWindow.isVisible()) return false;
       const assistant = state.mainWindow.getBounds();
       if (!assistant || assistant.width < 50 || assistant.height < 50) return false;
       const dipWechat = ctx.follow.pxToDipRect(state.lastWechatPxRect);
-      const wx = dipWechat.x, wy = dipWechat.y, ww = dipWechat.width, wh = dipWechat.height;
+      const wx = dipWechat.x,
+        wy = dipWechat.y,
+        ww = dipWechat.width,
+        wh = dipWechat.height;
       if (ww < 200 || wh < 200) return false;
-      const AX = assistant.x, AY = assistant.y, AW = assistant.width, AH = assistant.height;
+      const AX = assistant.x,
+        AY = assistant.y,
+        AW = assistant.width,
+        AH = assistant.height;
       const H_TOLERANCE = 40;
       const SIDE_TOLERANCE = 40;
       const MIN_OVERLAP_HEIGHT_RATIO = 0.65;
@@ -210,7 +320,9 @@ ctx.misc = {
   },
 
   detectEnterpriseForegroundFallback() {
-    const ENTERPRISE_PROC_NAMES = new Set(['WXWork.exe','WeCom.exe','WeChatAppEx.exe','WXWorkWeb.exe','WeMail.exe','WXDrive.exe']);
+    const ENTERPRISE_PROC_NAMES = new Set(['WXWork.exe', 'WeCom.exe', 'WeChatAppEx.exe', 'WXWorkWeb.exe',
+      'WeMail.exe', 'WXDrive.exe'
+    ]);
     try {
       if (!windowManager || !windowManager.getActiveWindow) return false;
       const active = windowManager.getActiveWindow();
@@ -246,74 +358,191 @@ console.log('[BOOT] after registerFeatures');
 
 // ===== warm up helpers =====
 app.whenReady().then(() => {
-  try { ctx.clipboard.ensureGifStoreDir(); } catch {}
-  try { ctx.clipboard.ensureFileDropHelperReady(); } catch {}
+  try {
+    ctx.clipboard.ensureGifStoreDir();
+  } catch {}
+  try {
+    ctx.clipboard.ensureFileDropHelperReady();
+  } catch {}
 });
 
+// ===== handleEvent (保持原逻辑，不拆) =====
 // ===== handleEvent (保持原逻辑，不拆) =====
 function handleEvent(evt) {
   if (state.quitting) return;
   if (evt && typeof evt.procName === 'string') state.lastProcName = String(evt.procName || '').toLowerCase();
 
-  const { type, x, y, width, height, hwnd } = evt;
-  const incomingRect = { x, y, width, height };
+  const {
+    type,
+    x,
+    y,
+    width,
+    height,
+    hwnd
+  } = evt;
+  const incomingRect = {
+    x,
+    y,
+    width,
+    height
+  };
+  // DEBUG: print all monitor events, but throttle position spam
+  state.__dbg = state.__dbg || {
+    lastPosLog: 0
+  };
+  try {
+    const now = Date.now();
+    if (type !== 'position' || now - state.__dbg.lastPosLog > 800) {
+      if (type === 'position') state.__dbg.lastPosLog = now;
+      console.log('[WM EVT]', {
+        type,
+        hwnd,
+        procName: evt.procName,
+        rect: incomingRect,
+        wechatFound: state.wechatFound,
+        wechatHWND: state.wechatHWND,
+        screenshotPhase: state.screenshotPhase,
+        ignoreEphemeralUntil: state.ignoreEphemeralUntil,
+        freezePosition: state.freezePosition
+      });
+
+      // DEBUG: event sequence + key state
+      state.__dbg = state.__dbg || {
+        seq: 0,
+        lastPosLog: 0
+      };
+      state.__dbg.seq += 1;
+
+      try {
+        const now = Date.now();
+        const throttle = (type === 'position') && (now - state.__dbg.lastPosLog < 800);
+        if (!throttle) {
+          if (type === 'position') state.__dbg.lastPosLog = now;
+
+          let mwBounds = null;
+          try {
+            mwBounds = (state.mainWindow && !state.mainWindow.isDestroyed()) ? state.mainWindow.getBounds() : null;
+          } catch {}
+
+          console.log('[WM EVT]', {
+            seq: state.__dbg.seq,
+            type,
+            hwnd,
+            procName: evt.procName,
+            rect: incomingRect,
+            wechatFound: state.wechatFound,
+            wechatHWND: state.wechatHWND,
+            isWechatActive: state.isWechatActive,
+            userHidden: state.userHidden,
+            pinnedAlwaysOnTop: state.pinnedAlwaysOnTop,
+            shouldFollowNow: (() => {
+              try {
+                return ctx.follow.shouldFollowNow();
+              } catch {
+                return null;
+              }
+            })(),
+            screenshotPhase: state.screenshotPhase,
+            ignoreEphemeralUntil: state.ignoreEphemeralUntil,
+            freezePosition: state.freezePosition,
+            mainWindowBounds: mwBounds
+          });
+        }
+      } catch {}
+    }
+  } catch {}
+  // NEW: screenshotPhase(2) hard timeout, avoid stuck forever
+  const nowTs = Date.now();
+  if (state.screenshotPhase === 2) {
+    // 若 ignoreEphemeralUntil 异常/未设置，兜底 15 秒后强制结束 phase=2
+    const deadline = state.ignoreEphemeralUntil || 0;
+    const hardDeadline = (state.screenshotEndedAt ? (state.screenshotEndedAt + 15000) : 0);
+    if ((deadline && nowTs > deadline + 2000) || (hardDeadline && nowTs > hardDeadline)) {
+      console.log('[screenshotPhase] force reset to 0', {
+        screenshotEndedAt: state.screenshotEndedAt,
+        ignoreEphemeralUntil: state.ignoreEphemeralUntil
+      });
+      state.screenshotPhase = 0;
+      state.freezePosition = false;
+      state.screenshotInProgress = false;
+    }
+  }
 
   switch (type) {
     case 'found': {
+      // 目的：切换聊天窗到前台时，立即把 hwnd/rect 写进 state，确保后续吸附/层级都跟着换目标
       state.lastFoundAt = Date.now();
+
       if (state.screenshotInProgress || state.freezePosition) break;
       if (ctx.follow.shouldIgnoreEphemeral(incomingRect)) break;
+
       state.wechatFound = true;
       state.wechatHWND = hwnd;
       state.lastWechatPxRect = incomingRect;
+      state.lastValidWechatRect = incomingRect;
+
       ctx.follow.acceptAsBaseline(incomingRect);
 
+      console.log('[evt:found] tracked chat window', {
+        hwnd,
+        procName: state.lastProcName,
+        rect: incomingRect
+      });
+
+      // 只要当前应该跟随，就立即靠过去一次（不改你原有策略）
       const dockX = ctx.follow.computeDockX(state.lastWechatPxRect, state.assistWidth);
       state.lastDockX = dockX;
       const dip = ctx.follow.pxToDipRect(state.lastWechatPxRect);
       const h = ctx.follow.computeAssistantHeightFromWechatRect(state.lastWechatPxRect);
-      state.target = { x: dockX, y: dip.y, w: state.assistWidth, h };
-      if (ctx.follow.shouldFollowNow()) ctx.follow.applyTargetImmediate();
-      state.firstDirectPosition = true;
-      if (!state.userHidden && state.isWechatActive) ctx.follow.updateZOrder(null);
-      break;
-    }
-    case 'position': {
-      state.lastFoundAt = Date.now();
-      if (!state.wechatFound) {
-        if (state.screenshotInProgress || state.freezePosition) break;
-        if (ctx.follow.shouldIgnoreEphemeral(incomingRect)) break;
-        state.wechatFound = true;
-        state.wechatHWND = hwnd;
-      }
-      if (state.freezePosition) {
-        ctx.follow.applyFrozen();
-        break;
-      }
-      if (state.screenshotPhase === 2 && ctx.follow.isNearFull(incomingRect)) break;
-      if (ctx.follow.shouldIgnoreEphemeral(incomingRect)) break;
+      state.target = {
+        x: dockX,
+        y: dip.y,
+        w: state.assistWidth,
+        h
+      };
 
-      state.lastWechatPxRect = incomingRect;
-      ctx.follow.acceptAsBaseline(incomingRect);
-
-      const dockX = ctx.follow.computeDockX(state.lastWechatPxRect, state.assistWidth);
-      state.lastDockX = dockX;
-      const dip = ctx.follow.pxToDipRect(state.lastWechatPxRect);
-      const h = ctx.follow.computeAssistantHeightFromWechatRect(state.lastWechatPxRect);
-      state.target = { x: dockX, y: dip.y, w: state.assistWidth, h };
-
-      if (!state.firstDirectPosition && ctx.follow.shouldFollowNow()) {
+      if (ctx.follow.shouldFollowNow()) {
         ctx.follow.applyTargetImmediate();
         state.firstDirectPosition = true;
+        ctx.follow.updateZOrder(null);
       }
-      if (!state.userHidden && state.isWechatActive) ctx.follow.updateZOrder();
       break;
     }
     case 'foreground': {
+      // 目的1：你原来只 set isWechatActive=true，但切换 QQ/企微时 state.wechatHWND 可能没更新
+      // 目的2：让“聊天窗在最上层时助手也跟上层级”
       state.isWechatActive = true;
+
+      // 强制同步当前 foreground 的 hwnd/rect（关键：避免只收到 foreground 没收到 position 时不吸附）
+      if (hwnd && incomingRect && incomingRect.width > 0 && incomingRect.height > 0) {
+        state.wechatFound = true;
+        state.wechatHWND = hwnd;
+        state.lastWechatPxRect = incomingRect;
+        state.lastValidWechatRect = incomingRect;
+
+        // baseline 也更新一下（不破坏你 existing baseline 逻辑）
+        ctx.follow.acceptAsBaseline(incomingRect);
+
+        console.log('[evt:foreground] sync state to active chat', {
+          hwnd,
+          procName: state.lastProcName,
+          rect: incomingRect
+        });
+      } else {
+        console.log('[evt:foreground] missing rect, skip state sync', {
+          hwnd,
+          incomingRect
+        });
+      }
+
+      // 继续保留你现有 dock + apply
       ctx.follow.dockToWechatNow(true);
       ctx.follow.applyTargetImmediate();
 
+      // 前台事件来了，立刻更新层级一次（只要不是 pinnedAlwaysOnTop）
+      ctx.follow.updateZOrder(null);
+
+      // 你原本 screenshot 逻辑保持不动
       if (state.screenshotInProgress) {
         state.screenshotInProgress = false;
         state.screenshotPhase = 2;
@@ -322,11 +551,21 @@ function handleEvent(evt) {
         state.ignoreEphemeralUntil = state.screenshotEndedAt + 3000;
 
         if (state.lastBaselineRect) {
-          state.lastWechatPxRect = { ...state.lastBaselineRect };
+          state.lastWechatPxRect = {
+            ...state.lastBaselineRect
+          };
+          state.lastValidWechatRect = {
+            ...state.lastBaselineRect
+          };
           if (ctx.follow.shouldFollowNow()) ctx.follow.applyFrozen();
           state.wechatFound = true;
         } else if (state.preShotWechatRect) {
-          state.lastWechatPxRect = { ...state.preShotWechatRect };
+          state.lastWechatPxRect = {
+            ...state.preShotWechatRect
+          };
+          state.lastValidWechatRect = {
+            ...state.preShotWechatRect
+          };
           ctx.follow.acceptAsBaseline(state.lastWechatPxRect);
           if (ctx.follow.shouldFollowNow()) ctx.follow.applyFrozen();
           state.wechatFound = true;
@@ -338,12 +577,170 @@ function handleEvent(evt) {
       if (!state.userHidden && state.isWechatActive) ctx.follow.updateZOrder();
       break;
     }
-    case 'minimized': {
-      state.isWechatActive = false;
-      if (state.screenshotInProgress || state.freezePosition) break;
-      if (!state.userHidden) ctx.windows.showMini();
+
+    case 'destroyed': {
+      // 目的：切换聊天窗时可能会先 destroyed 再 found（你之前日志出现过）
+      // 这里加日志，但不“止血”，只做合理清理。
+      const dt = Date.now() - (state.lastFoundAt || 0);
+
+      console.log('[evt:destroyed] received', {
+        hwnd,
+        procName: state.lastProcName,
+        dt,
+        trackedHWND: state.wechatHWND,
+        wechatFound: state.wechatFound
+      });
+
+      // 只在 destroyed 的 hwnd 就是我们当前 tracked 的情况下才清理
+      if (state.wechatHWND && Number(hwnd) === Number(state.wechatHWND)) {
+        state.wechatFound = false;
+        state.wechatHWND = null;
+        state.firstDirectPosition = false;
+        // lastWechatPxRect 不强制清空（方便 restoreDockIfNeeded 用 WM 扫描兜底）
+      }
       break;
     }
+    case 'position': {
+      state.lastFoundAt = Date.now();
+
+      if (!state.wechatFound) {
+        if (state.screenshotInProgress || state.freezePosition) break;
+        if (ctx.follow.shouldIgnoreEphemeral(incomingRect)) break;
+        state.wechatFound = true;
+        state.wechatHWND = hwnd;
+      }
+
+      // freezePosition: keep old behavior
+      if (state.freezePosition) {
+        ctx.follow.applyFrozen();
+        break;
+      }
+
+      // ===== NEW: near-full transition guard =====
+      // 全屏/最大化过渡时，会出现 x=-12,y=-12,width~screen 的 rect（你日志已证实）
+      // 这种 rect 会把助手拉到接近全屏高度并跑偏，所以先防抖：
+      const nearFull = ctx.follow.isNearFull(incomingRect);
+
+      if (nearFull) {
+        const now = Date.now();
+        if (!state.nearFullSince) state.nearFullSince = now;
+
+        const dt = now - state.nearFullSince;
+
+        // 1200ms 内认为是“过渡态”，不要用它更新 target（避免跑偏变大）
+        if (dt < 1200) {
+          console.log('[position] nearFull transition ignored', {
+            rect: incomingRect,
+            nearFullSince: state.nearFullSince,
+            dt
+          });
+
+          // 注意：这里不更新 lastWechatPxRect，不 accept baseline，不改 target
+          // 让后续的“正常 rect”把位置拉回去
+          break;
+        } else {
+          // near-full 持续足够久，认为用户确实最大化/全屏了，允许跟随
+          console.log('[position] nearFull stable -> accept', {
+            dt,
+            rect: incomingRect
+          });
+        }
+      } else {
+        // 一旦回到正常窗口，清空 nearFull 计时
+        if (state.nearFullSince) {
+          console.log('[position] nearFull cleared -> resume normal', {
+            nearFullSince: state.nearFullSince
+          });
+        }
+        state.nearFullSince = 0;
+      }
+      // ===== NEW END =====
+
+      // 你原有逻辑
+      if (state.screenshotPhase === 2 && nearFull) break;
+      if (ctx.follow.shouldIgnoreEphemeral(incomingRect)) break;
+
+      state.lastWechatPxRect = incomingRect;
+      state.lastValidWechatRect = incomingRect;
+      ctx.follow.acceptAsBaseline(incomingRect);
+
+      const dockX = ctx.follow.computeDockX(state.lastWechatPxRect, state.assistWidth);
+      state.lastDockX = dockX;
+      const dip = ctx.follow.pxToDipRect(state.lastWechatPxRect);
+      const h = ctx.follow.computeAssistantHeightFromWechatRect(state.lastWechatPxRect);
+      state.target = {
+        x: dockX,
+        y: dip.y,
+        w: state.assistWidth,
+        h
+      };
+
+      console.log('[position] computed target', {
+        incomingRect,
+        dockX,
+        dipY: dip.y,
+        h,
+        assistWidth: state.assistWidth,
+        shouldFollowNow: (() => {
+          try {
+            return ctx.follow.shouldFollowNow();
+          } catch {
+            return null;
+          }
+        })()
+      });
+
+      if (!state.firstDirectPosition && ctx.follow.shouldFollowNow()) {
+        console.log('[position] applyTargetImmediate? firstDirectPosition=', state.firstDirectPosition);
+        ctx.follow.applyTargetImmediate();
+        state.firstDirectPosition = true;
+      }
+
+      if (!state.userHidden && state.isWechatActive) ctx.follow.updateZOrder();
+      break;
+    }
+
+    case 'foreground': {
+      state.isWechatActive = true;
+      ctx.follow.dockToWechatNow(true);
+      console.log('[position] applyTargetImmediate? firstDirectPosition=', state.firstDirectPosition);
+      ctx.follow.applyTargetImmediate();
+      console.log('[position] applyTargetImmediate? firstDirectPosition=', state.firstDirectPosition);
+      if (state.screenshotInProgress) {
+        state.screenshotInProgress = false;
+        state.screenshotPhase = 2;
+        state.freezePosition = false;
+        state.screenshotEndedAt = Date.now();
+        state.ignoreEphemeralUntil = state.screenshotEndedAt + 3000;
+
+        if (state.lastBaselineRect) {
+          state.lastWechatPxRect = {
+            ...state.lastBaselineRect
+          };
+          state.lastValidWechatRect = {
+            ...state.lastBaselineRect
+          }; // NEW
+          if (ctx.follow.shouldFollowNow()) ctx.follow.applyFrozen();
+          state.wechatFound = true;
+        } else if (state.preShotWechatRect) {
+          state.lastWechatPxRect = {
+            ...state.preShotWechatRect
+          };
+          state.lastValidWechatRect = {
+            ...state.preShotWechatRect
+          }; // NEW
+          ctx.follow.acceptAsBaseline(state.lastWechatPxRect);
+          if (ctx.follow.shouldFollowNow()) ctx.follow.applyFrozen();
+          state.wechatFound = true;
+        }
+      } else if (state.screenshotPhase === 2 && Date.now() > state.ignoreEphemeralUntil) {
+        state.screenshotPhase = 0;
+      }
+
+      if (!state.userHidden && state.isWechatActive) ctx.follow.updateZOrder();
+      break;
+    }
+
     case 'restored': {
       state.isWechatActive = true;
       if (state.screenshotInProgress) {
@@ -352,12 +749,23 @@ function handleEvent(evt) {
         state.freezePosition = false;
         state.screenshotEndedAt = Date.now();
         state.ignoreEphemeralUntil = state.screenshotEndedAt + 3000;
+
         if (state.lastBaselineRect) {
-          state.lastWechatPxRect = { ...state.lastBaselineRect };
+          state.lastWechatPxRect = {
+            ...state.lastBaselineRect
+          };
+          state.lastValidWechatRect = {
+            ...state.lastBaselineRect
+          }; // NEW
           if (ctx.follow.shouldFollowNow()) ctx.follow.applyFrozen();
           state.wechatFound = true;
         } else if (state.preShotWechatRect) {
-          state.lastWechatPxRect = { ...state.preShotWechatRect };
+          state.lastWechatPxRect = {
+            ...state.preShotWechatRect
+          };
+          state.lastValidWechatRect = {
+            ...state.preShotWechatRect
+          }; // NEW
           ctx.follow.acceptAsBaseline(state.lastWechatPxRect);
           if (ctx.follow.shouldFollowNow()) ctx.follow.applyFrozen();
           state.wechatFound = true;
@@ -365,38 +773,11 @@ function handleEvent(evt) {
       } else if (state.screenshotPhase === 2 && Date.now() > state.ignoreEphemeralUntil) {
         state.screenshotPhase = 0;
       }
+
       ctx.follow.dockToWechatNow(true);
       ctx.follow.applyTargetImmediate();
       ctx.windows.showMain();
       if (state.wechatFound) ctx.follow.updateZOrder();
-      break;
-    }
-    case 'destroyed': {
-      const dt = Date.now() - (state.lastFoundAt || 0);
-      if (state.screenshotInProgress || state.freezePosition || Date.now() < state.ignoreEphemeralUntil) break;
-      if (dt >= 0 && dt < state.TRANSIENT_DESTROY_MS) break;
-
-      const wmInfo = ctx.follow.getWechatWindowViaWM();
-      if (wmInfo && wmInfo.rect && wmInfo.rect.width > 300 && wmInfo.rect.height > 300) {
-        state.wechatFound = true;
-        state.wechatHWND = wmInfo.hwnd || state.wechatHWND;
-        state.lastWechatPxRect = wmInfo.rect;
-        if (!ctx.follow.shouldIgnoreEphemeral(wmInfo.rect)) ctx.follow.acceptAsBaseline(wmInfo.rect);
-
-        const dockX = ctx.follow.computeDockX(state.lastWechatPxRect, state.assistWidth);
-        state.lastDockX = dockX;
-        const dip = ctx.follow.pxToDipRect(state.lastWechatPxRect);
-        const h = ctx.follow.computeAssistantHeightFromWechatRect(state.lastWechatPxRect);
-        state.target = { x: dockX, y: dip.y, w: state.assistWidth, h };
-
-        if (ctx.follow.shouldFollowNow()) ctx.follow.applyTargetImmediate();
-        if (!state.userHidden && state.isWechatActive) ctx.follow.updateZOrder();
-        break;
-      }
-
-      state.wechatFound = false;
-      state.wechatHWND = null;
-      state.firstDirectPosition = false;
       break;
     }
   }
@@ -407,7 +788,6 @@ app.whenReady().then(async () => {
   try {
     if (windowManager && windowManager.getWindows) {
       const wins = windowManager.getWindows() || [];
-      console.log('========== Chat window candidates on startup ==========');
       wins.forEach((w, idx) => {
         const type = ctx.chat.classifyWindowType(w, 'startup:' + idx);
         if (!type) return;
@@ -417,7 +797,12 @@ app.whenReady().then(async () => {
           title: String(w.getTitle?.() || ''),
           proc: String(w.process?.name || ''),
           path: String(w.process?.path || ''),
-          bounds: b ? { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height) } : null
+          bounds: b ? {
+            x: Math.round(b.x),
+            y: Math.round(b.y),
+            width: Math.round(b.width),
+            height: Math.round(b.height)
+          } : null
         });
       });
       console.log('======================================================');
@@ -432,13 +817,16 @@ app.whenReady().then(async () => {
   ctx.windows.showMain();
 
   try {
-    wechatMonitor.start({ keywords: ["微信", "企业微信", "Telegram", "WhatsApp", "QQ"] }, handleEvent);
+    wechatMonitor.start({
+      keywords: ["微信", "企业微信", "Telegram", "WhatsApp", "QQ"]
+    }, handleEvent);
   } catch (e) {
     console.warn('[wechatMonitor] start failed:', e.message);
   }
 
   setTimeout(() => {
-    if (state.wechatFound && state.lastWechatPxRect && state.lastWechatPxRect.width > 300 && state.lastWechatPxRect.height > 300) {
+    if (state.wechatFound && state.lastWechatPxRect && state.lastWechatPxRect.width > 300 && state
+      .lastWechatPxRect.height > 300) {
       if (ctx.follow.dockToWechatNow(true)) {
         if (ctx.follow.computeIsWechatActive()) ctx.follow.updateZOrder();
       }
@@ -465,7 +853,9 @@ process.on('unhandledRejection', (r) => console.error('[unhandledRejection]', r 
 app.on('before-quit', (e) => {
   if (!state.allowQuit) {
     e.preventDefault();
-    try { ocr.stop(); } catch {}
+    try {
+      ocr.stop();
+    } catch {}
     console.log('[before-quit] blocked');
   } else {
     console.log('[before-quit] allowed');
@@ -486,7 +876,9 @@ app.on('window-all-closed', (e) => {
 });
 
 // settings ipc (保持原逻辑)
-ipcMain.handle('settings:get', () => ({ pinned: state.pinnedAlwaysOnTop }));
+ipcMain.handle('settings:get', () => ({
+  pinned: state.pinnedAlwaysOnTop
+}));
 ipcMain.on('settings:set', (_e, payload) => {
   const v = !!(payload && payload.pinned);
   if (v !== state.pinnedAlwaysOnTop) {
