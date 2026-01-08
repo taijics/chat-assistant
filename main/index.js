@@ -71,7 +71,6 @@ let wechatMonitor;
       return;
     } catch {}
   }
-  console.warn('[wechatMonitor] module not found. Using stub.');
   wechatMonitor = {
     start: () => {},
     stop: () => {},
@@ -102,7 +101,6 @@ try {
   try {
     sendKeys = require('./utils/send-keys');
   } catch {}
-  console.log('[BOOT] sendKeys keys=', Object.keys(sendKeys), 'sendCtrlV=', typeof sendKeys.sendCtrlV);
 }
 
 let windowManager = null;
@@ -111,7 +109,6 @@ try {
     windowManager
   } = require('node-window-manager'));
 } catch (e) {
-  console.warn('[deps] node-window-manager not loaded:', e && e.message);
   windowManager = {
     getActiveWindow() {
       return null;
@@ -234,7 +231,6 @@ ctx.misc = {
       });
       if (!canceled && filePath) fs.writeFileSync(filePath, data, 'utf8');
     } catch (e) {
-      console.error('export failed:', e);
     }
   },
 
@@ -352,9 +348,7 @@ ctx.misc = {
 
 // ===== register ipc/features =====
 registerIpc(ctx);
-console.log('[BOOT] before registerFeatures');
 registerFeatures(ctx);
-console.log('[BOOT] after registerFeatures');
 
 // ===== warm up helpers =====
 app.whenReady().then(() => {
@@ -394,17 +388,6 @@ function handleEvent(evt) {
     const now = Date.now();
     if (type !== 'position' || now - state.__dbg.lastPosLog > 800) {
       if (type === 'position') state.__dbg.lastPosLog = now;
-      console.log('[WM EVT]', {
-        type,
-        hwnd,
-        procName: evt.procName,
-        rect: incomingRect,
-        wechatFound: state.wechatFound,
-        wechatHWND: state.wechatHWND,
-        screenshotPhase: state.screenshotPhase,
-        ignoreEphemeralUntil: state.ignoreEphemeralUntil,
-        freezePosition: state.freezePosition
-      });
 
       // DEBUG: event sequence + key state
       state.__dbg = state.__dbg || {
@@ -423,30 +406,6 @@ function handleEvent(evt) {
           try {
             mwBounds = (state.mainWindow && !state.mainWindow.isDestroyed()) ? state.mainWindow.getBounds() : null;
           } catch {}
-
-          console.log('[WM EVT]', {
-            seq: state.__dbg.seq,
-            type,
-            hwnd,
-            procName: evt.procName,
-            rect: incomingRect,
-            wechatFound: state.wechatFound,
-            wechatHWND: state.wechatHWND,
-            isWechatActive: state.isWechatActive,
-            userHidden: state.userHidden,
-            pinnedAlwaysOnTop: state.pinnedAlwaysOnTop,
-            shouldFollowNow: (() => {
-              try {
-                return ctx.follow.shouldFollowNow();
-              } catch {
-                return null;
-              }
-            })(),
-            screenshotPhase: state.screenshotPhase,
-            ignoreEphemeralUntil: state.ignoreEphemeralUntil,
-            freezePosition: state.freezePosition,
-            mainWindowBounds: mwBounds
-          });
         }
       } catch {}
     }
@@ -458,10 +417,7 @@ function handleEvent(evt) {
     const deadline = state.ignoreEphemeralUntil || 0;
     const hardDeadline = (state.screenshotEndedAt ? (state.screenshotEndedAt + 15000) : 0);
     if ((deadline && nowTs > deadline + 2000) || (hardDeadline && nowTs > hardDeadline)) {
-      console.log('[screenshotPhase] force reset to 0', {
-        screenshotEndedAt: state.screenshotEndedAt,
-        ignoreEphemeralUntil: state.ignoreEphemeralUntil
-      });
+      
       state.screenshotPhase = 0;
       state.freezePosition = false;
       state.screenshotInProgress = false;
@@ -483,11 +439,7 @@ function handleEvent(evt) {
 
       ctx.follow.acceptAsBaseline(incomingRect);
 
-      console.log('[evt:found] tracked chat window', {
-        hwnd,
-        procName: state.lastProcName,
-        rect: incomingRect
-      });
+     
 
       // 只要当前应该跟随，就立即靠过去一次（不改你原有策略）
       const dockX = ctx.follow.computeDockX(state.lastWechatPxRect, state.assistWidth);
@@ -523,16 +475,9 @@ function handleEvent(evt) {
         // baseline 也更新一下（不破坏你 existing baseline 逻辑）
         ctx.follow.acceptAsBaseline(incomingRect);
 
-        console.log('[evt:foreground] sync state to active chat', {
-          hwnd,
-          procName: state.lastProcName,
-          rect: incomingRect
-        });
+        
       } else {
-        console.log('[evt:foreground] missing rect, skip state sync', {
-          hwnd,
-          incomingRect
-        });
+       
       }
 
       // 继续保留你现有 dock + apply
@@ -583,13 +528,7 @@ function handleEvent(evt) {
       // 这里加日志，但不“止血”，只做合理清理。
       const dt = Date.now() - (state.lastFoundAt || 0);
 
-      console.log('[evt:destroyed] received', {
-        hwnd,
-        procName: state.lastProcName,
-        dt,
-        trackedHWND: state.wechatHWND,
-        wechatFound: state.wechatFound
-      });
+      
 
       // 只在 destroyed 的 hwnd 就是我们当前 tracked 的情况下才清理
       if (state.wechatHWND && Number(hwnd) === Number(state.wechatHWND)) {

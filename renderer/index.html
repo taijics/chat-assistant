@@ -54,6 +54,24 @@
         animation: emo-spin 1s linear infinite;
       }
 
+      .footer-btn-vip {
+        border: none;
+        color: #fff;
+        font-weight: 600;
+        background: transparent;
+        cursor: pointer;
+        border-radius: 3px;
+      }
+
+      .footer-btn-vip:hover {
+        background: rgba(255, 255, 255, .18);
+        /* 浅灰/浅白效果（深色底上更好看） */
+      }
+
+      .footer-btn-vip:active {
+        transform: scale(.98);
+      }
+
       #ai-agent-reload-btn {
         width: 28px;
         height: 28px;
@@ -216,10 +234,15 @@
               <button class="aim-tab active" role="tab" aria-selected="true" tabindex="0"
                 data-url="https://www.doubao.com/chat/">豆包</button>
             </div>
-
             <div class="aimodels-actions">
               <button id="aimodels-open-external">在浏览器打开</button>
             </div>
+          </div>
+          <div class="aimodels-custom-open"
+            style="flex: 1; display:flex;margin-bottom: 10px; gap:8px; align-items:center; max-width:520px;">
+            <input id="aimodels-url-input" type="text" placeholder="输入网址，例如：https://example.com"
+              style="flex:1; height:32px; padding:0 10px; border:1px solid #ddd; border-radius:6px; outline:none;" />
+            <button id="aimodels-url-go" style="height:32px; padding:0 12px;">确定</button>
           </div>
           <div class="aimodels-view">
             <!-- <div id="aimodels-host" class="aimodels-host"></div> -->
@@ -274,9 +297,9 @@
     <div class="fixed-footer-bar">
       <button class="footer-btn"><span class="icon-menu"></span></button>
       <span class="footer-right">
-        <!-- <span class="vip-badge">VIP</span>
-        <span class="footer-text">官网</span> -->
-        <span class="footer-text footer-account" id="footer-account" role="button" title="登录">登录</span>
+        <button class="footer-btn-vip" id="footer-vip" title="VIP">VIP</button>
+        <span class="footer-text footer-account footer-btn-vip" id="footer-account" role="button" title="登录">登录</span>
+      </span>
     </div>
 
     <!-- 右侧缩放条（不可见，仅用于命中拖动） -->
@@ -294,7 +317,16 @@
 
     <!-- 新增：通用 API 与 登录逻辑 -->
     <script src="./js/api.js"></script>
-    <script src="./js/auth.js"></script>
-
+    <!-- <script src="./js/auth.js"></script> -->
+    <script src="./js/auth/auth.constants.js"></script>
+    <script src="./js/auth/auth.styles.js"></script>
+    <script src="./js/auth/auth.service.js"></script>
+    <script src="./js/auth/auth.vip.js"></script>
+    <script src="./js/auth/auth.paywall.ui.js"></script>
+    <script src="./js/auth/auth.ui.js"></script>
+    <script src="./js/auth/auth.bootstrap.js"></script>
+    <!-- ✅ 新增：VIP/设置中心入口 -->
+    <script src="./js/vip-settings.entry.js"></script>
+    <script src="./js/settings/loading.js"></script>
   </body>
 </html>

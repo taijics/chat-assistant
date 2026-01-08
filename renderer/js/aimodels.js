@@ -6,7 +6,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     } = require('electron');
     const $ = (sel, root = document) => root.querySelector(sel);
     const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
-
+    let currentIframeUrl = ''; // 记录“当前显示在 iframe 的网址”
     let useFallbackIframe = false;
     let lastUrl = 'https://www.doubao.com/chat/';
     window.currentModelTabIdx = -1;
@@ -138,16 +138,55 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         t.setAttribute('tabindex', isActive ? '0' : '-1');
       });
     }
+    // 放在 IIFE 内任意位置（能拿到 ipcRenderer）
+    function wireOpenExternal() {
+      const btn = document.getElementById('aimodels-open-external');
+      if (!btn) return;
+
+      btn.addEventListener('click', async () => {
+        // 1) 优先：当前 iframe 记录的 url
+        let url = (currentIframeUrl || '').trim();
+
+        // 2) 兜底：输入框
+        if (!url) {
+          const input = document.getElementById('aimodels-url-input');
+          url = (input?.value || '').trim();
+        }
+
+        // 3) 再兜底：豆包默认
+        if (!url) url = lastUrl || 'https://www.doubao.com/chat/';
+
+        // 规范化
+        url = normalizeUrl(url);
+
+        console.log('[aimodels] openExternal click =>', url);
+
+        try {
+          const res = await ipcRenderer.invoke('aimodels:openExternal', {
+            url
+          });
+          console.log('[aimodels] openExternal result =>', res);
+        } catch (e) {
+          console.error('[aimodels] openExternal failed =>', e);
+        }
+      });
+    }
 
     function activateModel(btn) {
-      const bar = $('#aimodels-tabs');
+      const bar = document.getElementById('aimodels-tabs');
       if (!bar || !btn) return;
-      setActiveTabStyles(btn, bar);
+
+      // tab 样式
+      bar.querySelectorAll('.aim-tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+
       const url = btn.dataset.url || '';
-      if (url) {
-        lastUrl = url;
-        switchTo(url);
-      }
+      if (!url) return;
+
+      lastUrl = url;
+      currentIframeUrl = url;
+      setUrlInputValue(url);
+      openInIframe(url); // ✅ 永远用 iframe 打开
     }
 
     async function switchTo(url) {
@@ -367,6 +406,57 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       // 打开网址
       openModelUrl(tab.dataset.url);
     };
+
+    function normalizeUrl(input) {
+      const raw = (input || '').trim();
+      if (!raw) return '';
+      if (!/^https?:\/\//i.test(raw)) return 'https://' + raw;
+      return raw;
+    }
+
+    function setUrlInputValue(url) {
+      const input = document.getElementById('aimodels-url-input');
+      if (input) input.value = url || '';
+    }
+
+    function openInIframe(url) {
+      const iframe = document.getElementById('aimodels-fallback');
+      if (!iframe) return;
+      iframe.hidden = false;
+
+      // 关键：重新赋值前先置空一次，避免某些站点缓存/不触发 reload
+      iframe.src = 'about:blank';
+      setTimeout(() => {
+        iframe.src = url;
+      }, 0);
+    }
+
+    function wireCustomUrlOpen() {
+      const input = document.getElementById('aimodels-url-input');
+      const btn = document.getElementById('aimodels-url-go');
+      if (!input || !btn) return;
+
+      const go = () => {
+        const url = normalizeUrl(input.value);
+        if (!url) return;
+
+        // 取消豆包 active（表示现在是“自定义网址”）
+        document.querySelectorAll('#aimodels-tabs .aim-tab').forEach(t => t.classList.remove('active'));
+
+        lastUrl = url;
+        setUrlInputValue(url);
+        currentIframeUrl = url;
+        openInIframe(url);
+      };
+
+      btn.addEventListener('click', go);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          go();
+        }
+      });
+    }
     // 打开指定URL到iframe或BrowserView
     function openModelUrl(url) {
       // 如果用BrowserView，需主进程通信
@@ -387,8 +477,11 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         });
       });
     });
-
-    window.addEventListener('DOMContentLoaded', setupEvents);
+    window.addEventListener('DOMContentLoaded', () => {
+      wireCustomUrlOpen();
+      wireOpenExternal(); // ✅ 一定要加
+      setupEvents();
+    });
   })();
 } else {
   module.exports = {};

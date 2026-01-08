@@ -52,7 +52,8 @@ function createState(app) {
 
   state.fgFollowTimer = null;
   state.FG_CHECK_INTERVAL = 250;
-
+ // ✅ settings window
+  state.settingsWindow = null;
   state.lastStableAssistantHeight = 600;
   state.dockSide = null;
 

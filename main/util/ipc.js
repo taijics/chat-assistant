@@ -1,6 +1,7 @@
 function registerIpc(ctx) {
   const { deps, state } = ctx;
-  const { ipcMain, dialog, shell, nativeImage, clipboard } = deps.electron;
+  // ✅ 一定要把 BrowserWindow 解构出来
+  const { BrowserWindow, ipcMain, dialog, shell, nativeImage, clipboard } = deps.electron;
 
   // token
   ipcMain.handle('get-baidu-ocr-token', () => state.baiduOcrToken || '');
@@ -128,6 +129,59 @@ function registerIpc(ctx) {
     }
   });
 
+  // ✅ VIP/设置中心窗口
+  ipcMain.on('vip:open-settings', () => {
+     try {
+       if (state.settingsWindow && !state.settingsWindow.isDestroyed()) {
+         state.settingsWindow.show();
+         state.settingsWindow.focus();
+         return;
+       }
+ 
+       const win = new BrowserWindow({
+         parent: state.mainWindow || undefined,
+         width: 980,
+         height: 640,
+         minWidth: 860,
+         minHeight: 560,
+         show: false, // ✅ 先不 show，避免闪一下
+         frame: true,
+         autoHideMenuBar: true,
+         webPreferences: { nodeIntegration: true, contextIsolation: false }
+       });
+ 
+       state.settingsWindow = win;
+ 
+       win.on('closed', () => {
+         state.settingsWindow = null;
+       });
+ 
+       win.loadFile(require('path').join(__dirname, '../../renderer/settings.html'));
+ 
+       // ✅ 页面准备好后再居中+显示（更稳定）
+       win.once('ready-to-show', () => {
+         try { win.center(); } catch {}
+         try { win.show(); } catch {}
+         try { win.focus(); } catch {}
+       });
+     } catch (e) {
+       console.warn('[vip:open-settings] failed:', e && e.message);
+     }
+   });
+// ✅ settings 窗口 DevTools 快捷键（Alt + D）
+ipcMain.on('settings:devtools-toggle', () => {
+  try {
+    const win = state.settingsWindow;
+    if (!win || win.isDestroyed()) return;
+    const wc = win.webContents;
+    if (!wc) return;
+
+    if (wc.isDevToolsOpened()) wc.closeDevTools();
+    else wc.openDevTools({ mode: 'detach' });
+  } catch (e) {
+    console.warn('[settings:devtools-toggle] failed:', e && e.message);
+  }
+});
   // inspect
   ipcMain.handle('wechat:is-docked', () => ctx.misc.isAssistantDocked());
   ipcMain.handle('wechat:is-foreground', () => {

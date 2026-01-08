@@ -1,4 +1,4 @@
-('D:\\项目\\公司资料\\源码\\联讯软件\\chat-assistant\\py-build\\wechat_ocr\\PYZ-00.pyz',
+('D:\\work\\chat-assistant-all\\py-build\\wechat_ocr\\PYZ-00.pyz',
  [('PIL',
    'C:\\ProgramData\\miniconda3\\Lib\\site-packages\\PIL\\__init__.py',
    'PYMODULE'),

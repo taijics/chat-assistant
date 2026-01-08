@@ -349,15 +349,7 @@ function startForegroundFollow() {
         }
       } catch {}
 
-      console.log('[fgFollow]', {
-        activeIsChat,
-        activeHwnd,
-        activeTitle,
-        activeProc,
-        trackedHWND: state.wechatHWND,
-        wechatFound: state.wechatFound,
-        pinnedAlwaysOnTop: state.pinnedAlwaysOnTop
-      });
+     
     }
 
     // 关键改动：

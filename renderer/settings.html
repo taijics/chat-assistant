@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>设置中心</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="./css/settings.css" />
+  </head>
+  <body>
+    <div class="st-wrap">
+      <!-- 左侧导航 -->
+      <aside class="st-sider">
+        <div class="st-brand">
+          <div class="logo"></div>
+          <div class="name">AI为伴聊天助手</div>
+        </div>
+
+        <nav class="st-nav" id="st-nav">
+          <button class="st-nav-item active" data-page="vip">
+            <span class="dot"></span> VIP续费
+          </button>
+          <button class="st-nav-item" data-page="api">
+            <span class="dot"></span> 电脑清理
+          </button>
+          <button class="st-nav-item" data-page="agent">
+            <span class="dot"></span> 智能体选择
+          </button>
+          <button class="st-nav-item" data-page="tasks">
+            <span class="dot"></span> 其它设置
+          </button>
+          <div class="st-nav-spacer"></div>
+          <button class="st-nav-item" data-page="me">
+            <span class="dot"></span> 个人中心
+          </button>
+        </nav>
+
+        <div class="st-sider-footer">
+          <div class="me">
+            <div class="avatar"></div>
+            <div class="meta">
+              <div class="title" id="st-user-title">未登录</div>
+              <div class="sub" id="st-user-sub">点击右上角可关闭</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 右侧内容 -->
+      <main class="st-main">
+        <header class="st-topbar">
+          <div class="st-topbar-left">
+            <div class="st-page-title" id="st-page-title">VIP 充值</div>
+          </div>
+          <div class="st-topbar-right">
+            <button class="icon-btn" id="st-refresh" title="刷新">⟲</button>
+            <button class="icon-btn" id="st-close" title="关闭">✕</button>
+          </div>
+        </header>
+
+        <section class="st-content">
+          <!-- VIP -->
+          <div class="st-page" id="page-vip">
+            <div class="card">
+              <div class="row">
+                <div class="label">VIP到期时间</div>
+                <div class="value" id="vip-expire">-</div>
+              </div>
+              <div class="row">
+                <div class="label">状态</div>
+                <div class="value" id="vip-status">-</div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th style="width:40%;">套餐</th>
+                      <th style="width:20%;">天数</th>
+                      <th style="width:20%;">价格</th>
+                      <th style="width:20%;">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="vip-packages">
+                    <tr>
+                      <td colspan="4" class="muted">加载中...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- API 设置 -->
+          <div class="st-page" id="page-api" style="display:none;">
+            <div class="card">
+              <div class="card-title">后端接口地址</div>
+              <div class="form-row">
+                <label>BaseURL</label>
+                <input id="api-baseurl" type="text" placeholder="例如：http://127.0.0.1:6003" />
+                <div class="ops">
+                  <button class="btn" id="api-save">保存</button>
+                  <button class="btn ghost" id="api-reset">恢复默认</button>
+                </div>
+              </div>
+              <div class="muted">说明：保存后会写入 localStorage(api.baseURL)，刷新后生效。</div>
+            </div>
+          </div>
+
+          <div class="st-page" id="page-tasks" style="display:none;">
+            <div class="card">
+              <div class="card-title">任务设置</div>
+              <div class="muted">这里先占位，后面你把任务表格/开关/编辑等功能放这里。</div>
+            </div>
+          </div>
+
+          <div class="st-page" id="page-me" style="display:none;">
+            <div class="card">
+              <div class="card-title">我的</div>
+              <div class="muted">这里放账号信息、邀请信息、客服等。</div>
+            </div>
+          </div>
+
+          <!-- 智能体选择 -->
+          <div class="st-page" id="page-agent" style="display:none;">
+            <div class="card">
+              <div class="muted">VIP 会员才可添加/编辑/删除</div>
+          
+              <div style="display:flex; gap:10px; margin-top:12px;">
+                <button class="btn" id="agent-add-btn">新增智能体</button>
+                <button class="btn ghost" id="agent-refresh-btn">刷新</button>
+              </div>
+          
+              <!-- ✅ 新：电商卡片网格 -->
+              <div class="agent-grid" id="agent-grid" style="margin-top:12px;">
+                <div class="agent-empty muted" id="agent-empty">加载中...</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 智能体弹窗 -->
+          <div class="agent-modal" id="agent-modal" style="display:none;">
+            <div class="agent-modal-mask" id="agent-modal-mask"></div>
+            <div class="agent-modal-card" role="dialog" aria-modal="true" aria-label="智能体编辑">
+              <div class="agent-modal-head">
+                <div class="agent-modal-title" id="agent-modal-title">新增智能体</div>
+                <button class="agent-modal-close" id="agent-modal-close" title="关闭">✕</button>
+              </div>
+
+              <div class="agent-modal-body">
+                <div class="form-row" style="margin-bottom:10px;">
+                  <label>名称</label>
+                  <input id="agent-title" type="text" placeholder="例如：客服助手" />
+                </div>
+                <div class="form-row" style="margin-bottom:10px;">
+                  <label>Token</label>
+                  <input id="agent-kzToken" type="text" placeholder="扣子 token" />
+                </div>
+                <div class="form-row" style="margin-bottom:10px;">
+                  <label>BotId</label>
+                  <input id="agent-botId" type="text" placeholder="扣子 botId" />
+                </div>
+                <div class="form-row" id="agent-expire-row">
+                  <label>到期日</label>
+                  <input id="agent-expireDate" type="date" />
+                </div>
+
+                <div class="form-row" style="margin-top:10px;">
+                  <label>长期有效</label>
+                  <select id="agent-isLongTime">
+                    <option value="0">否</option>
+                    <option value="1">是</option>
+                  </select>
+                </div>
+
+                <div class="form-row" style="margin-top:10px;">
+                  <label>状态</label>
+                  <select id="agent-stats">
+                    <option value="1">启用</option>
+                    <option value="0">停用</option>
+                  </select>
+                </div>
+                <div class="muted" style="margin-top:10px;">
+                  说明：到期日可不填；格式示例：2026-12-31
+                </div>
+
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
+                  <button class="btn ghost" id="agent-modal-cancel">取消</button>
+                  <button class="btn" id="agent-modal-save">保存</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </section>
+      </main>
+    </div>
+
+
+    <!-- ✅ 套餐详情弹窗（新增） -->
+    <div class="pkg-modal" id="pkg-modal" style="display:none;">
+      <div class="pkg-modal-mask" id="pkg-modal-mask"></div>
+
+      <div class="pkg-modal-card" role="dialog" aria-modal="true" aria-label="套餐详情">
+        <div class="pkg-modal-head">
+          <div class="pkg-modal-title" id="pkg-title">套餐详情</div>
+          <button class="pkg-modal-close" id="pkg-modal-close" title="关闭">✕</button>
+        </div>
+
+        <div class="pkg-modal-body">
+          <div class="pkg-summary">
+            <div class="pkg-badges">
+              <span class="badge" id="pkg-type">-</span>
+              <span class="badge ghost" id="pkg-days">-</span>
+            </div>
+
+            <div class="pkg-price">
+              <span class="currency">¥</span>
+              <span class="num" id="pkg-amount">-</span>
+            </div>
+          </div>
+
+          <div class="pkg-desc">
+            <div class="pkg-desc-title">详情介绍</div>
+            <div class="pkg-desc-text" id="pkg-msg">-</div>
+          </div>
+
+
+          <div class="pkg-modal-footer">
+            <div class="pkg-pay-actions">
+              <button class="pay-btn wechat" id="pkg-pay-wechat">
+                <span class="pay-ic">WeChat</span>
+                <span class="pay-txt">微信支付</span>
+              </button>
+              <button class="pay-btn alipay" id="pkg-pay-alipay">
+                <span class="pay-ic">Ali</span>
+                <span class="pay-txt">支付宝</span>
+              </button>
+            </div>
+            <button class="btn ghost" id="pkg-cancel">取消</button>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ✅ 支付二维码弹框（你已有，保留） -->
+    <div class="pay-modal" id="pay-modal" style="display:none;">
+      <div class="pay-modal-mask" id="pay-modal-mask"></div>
+      <div class="pay-modal-card" role="dialog" aria-modal="true" aria-label="微信支付">
+        <div class="pay-modal-head">
+          <div class="pay-modal-title">扫码支付</div>
+          <button class="pay-modal-close" id="pay-modal-close" title="关闭">✕</button>
+        </div>
+
+        <div class="pay-modal-body">
+          <div class="pay-modal-left">
+            <div class="pay-qrcode-wrap">
+              <div class="muted" id="pay-loading">二维码生成中...</div>
+              <div id="pay-qrcode"></div>
+            </div>
+            <div class="pay-tip" id="pay-tip">请使用微信扫一扫</div>
+          </div>
+
+          <div class="pay-modal-right">
+            <div class="pay-kv">
+              <div class="k">订单号</div>
+              <div class="v" id="pay-orderNo">-</div>
+            </div>
+            <div class="pay-kv">
+              <div class="k">金额</div>
+              <div class="v strong" id="pay-amount">-</div>
+            </div>
+            <div class="pay-status" id="pay-status">等待扫码...</div>
+            <div class="pay-actions">
+              <button class="btn ghost" id="pay-cancel">取消</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="./js/api.js"></script>
+    <script src="./js/auth/auth.vip.js"></script>
+    <script src="./js/settings/dom.js"></script>
+    <script src="./js/settings/loading.js"></script>
+    <script src="./js/ai/ai.toast.js"></script>
+    <script src="./js/settings/pages.js"></script>
+    <script src="./js/settings/user.js"></script>
+    <script src="./js/settings/api-settings.js"></script>
+
+    <!-- ✅ 本地二维码库 -->
+    <script src="./js/settings/qrcode.min.js"></script>
+
+    <!-- ✅ 新增：套餐详情弹窗逻辑 -->
+    <script src="./js/settings/package-modal.js"></script>
+
+    <script src="./js/settings/vip.js"></script>
+    <script src="./js/settings/agent.js"></script>
+    <script src="./js/settings/app.js"></script>
+    <script src="./js/settings/devtools-hotkey.js"></script>
+    <script src="./js/settings/pay-modal.js"></script>
+
+
+  </body>
+</html>

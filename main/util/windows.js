@@ -114,7 +114,12 @@ function initWindows(ctx) {
 
     state.mainWindow.loadFile(pathJoin(__dirname, '../../renderer/index.html'));
 
-    try { deps.registerAimodelsHandlers(state.mainWindow); } catch {}
+   try {
+     deps.registerAimodelsHandlers(state.mainWindow);
+     console.log('[boot] registerAimodelsHandlers invoked');
+   } catch (e) {
+     console.error('[boot] registerAimodelsHandlers invoke failed:', e && (e.stack || e.message || e));
+   }
     try { deps.registerAiHandlers(state.mainWindow); } catch {}
 
     state.mainWindow.webContents.on('before-input-event', (event, input) => {

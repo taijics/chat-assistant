@@ -10,9 +10,8 @@
    */
 
   // -------------------- 常量与本地存储键 --------------------
-  // const DEFAULT_BASE_URL = 'http://127.0.0.1:6003'; // 统一默认后端地址
-  const DEFAULT_BASE_URL = 'https://back.aiweiban.cn'; // 统一默认后端地址
-  // const DEFAULT_BASE_URL = 'https://allback.aiweiban.cn'; // 统一默认后端地址
+  //const DEFAULT_BASE_URL = 'http://127.0.0.1:6003'; // 统一默认后端地址
+  const DEFAULT_BASE_URL = 'https://allback.aiweiban.cn'; // 统一默认后端地址
   const LS_TOKEN = 'auth.token';
   const LS_TOKEN_NAME = 'auth.tokenName'; // 例如 "auth-token" 或 "Authorization"
   const LS_USER = 'auth.user';
@@ -287,7 +286,71 @@
       return resp;
     }
   };
+  // 在 Auth 下面新增：
+  const UserAuth = {
+    /** 密码登录 POST /api/front/user/auth/loginByPassword */
+    async loginByPassword({
+      account,
+      password
+    }) {
+      const resp = await post('/api/front/user/auth/loginByPassword', {
+        account,
+        password
+      });
+      const data = resp && resp.data ? resp.data : {};
+      const tn = data.tokenName || 'auth-token';
+      const tk = data.token || '';
+      if (tk) {
+        setToken(tk);
+        setTokenName(tn);
+      }
+      return resp;
+    },
 
+    /** 发送验证码 POST /api/front/user/sendSmsCode?phone=&scene=login|resetPwd */
+    async sendSmsCode({
+      phone,
+      scene = 'login'
+    }) {
+      const url = '/api/front/user/sendSmsCode' + qs({
+        phone,
+        scene
+      });
+      return post(url, {}); // 后端是 @RequestParam，body 无所谓
+    },
+
+    /** 验证码登录 POST /api/front/user/auth/loginBySms */
+    async loginBySms({
+      phone,
+      smsCode
+    }) {
+      const resp = await post('/api/front/user/auth/loginBySms', {
+        phone,
+        smsCode
+      });
+      const data = resp && resp.data ? resp.data : {};
+      const tn = data.tokenName || 'auth-token';
+      const tk = data.token || '';
+      if (tk) {
+        setToken(tk);
+        setTokenName(tn);
+      }
+      return resp;
+    },
+
+    /** 忘记密码/重置密码 POST /api/front/user/auth/resetPassword */
+    async resetPassword({
+      phone,
+      smsCode,
+      newPassword
+    }) {
+      return post('/api/front/user/auth/resetPassword', {
+        phone,
+        smsCode,
+        newPassword
+      });
+    }
+  };
   const Agent = {
     /** 获取我所在小组可用的 AI 智能体列表 GET /api/front/agent/listByMyTeam */
     listByMyTeam() {
@@ -402,6 +465,7 @@
 
     // 高层端点
     auth: Auth,
+    userAuth: UserAuth,
     agent: Agent,
     content: Content,
     files: Files

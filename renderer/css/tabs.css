@@ -47,7 +47,7 @@
 
 /* 内容面板容器 */
 .tabpanes {
-  padding: 12px;
+  padding: 5px;
   background: #fff;
   border: 1px solid #ddd;
   border-top: none;
@@ -160,11 +160,12 @@
 }
 
 .phrase-item {
-  padding: 8px 10px;
+  padding: 6px;
   border: 1px solid #eee;
   border-radius: 8px;
   background: #fff;
   cursor: pointer;
+  margin-bottom: 7px;
   /* 单击可粘贴 */
   user-select: none;
 }

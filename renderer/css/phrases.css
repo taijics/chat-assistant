@@ -94,6 +94,7 @@ body { padding-top: 8px; }
 
 .phrase-acc-body {
   padding: 0;
+  font-size: 14px;
 }
 .phrase-acc-item.collapsed .phrase-acc-body {
   display: none;
